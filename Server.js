@@ -283,7 +283,74 @@ io.on('connection', (socket) => {
     });
 });
 
-// 7. ROUTES
+// 7. CORE UTILITY: PROCESS GRID SUCCESS (7.89% TAX & UNLOCK LOGIC)
+const processGridSuccess = async (tx) => {
+    if (tx.status === 'completed') return; 
+
+    const post = await Post.findById(tx.postID);
+    if (!post) {
+        console.error("❌ Post context missing for transaction:", tx.checkoutID);
+        return;
+    }
+
+    // --- THE SOVEREIGN TAX CALCULATION (7.89%) ---
+    const platformFee = tx.amountPaid * PROTOCOL_FEE;
+    const netPayout = tx.amountPaid - platformFee;
+
+    // Afro Coin rewards logic
+    const mintResults = await governAfroMinting(tx.amountPaid);
+    const reward = mintResults.user;
+
+    // 1. Move the 7.89% to the Protocol Vault (Protocol Revenue)
+    await Vault.findOneAndUpdate(
+        { id: 'protocol_vault' }, 
+        { $inc: { balance: platformFee } }, 
+        { upsert: true }
+    );
+    
+    // 2. Update User Identity and Afro Rewards
+    await User.findOneAndUpdate(
+        { identity: tx.userPhone }, 
+        { $inc: { afroCoins: reward }, lastSeen: Date.now() }, 
+        { upsert: true }
+    );
+    
+    // 3. Handle Creator & Collaborator Payouts (Distributing Net 92.11%)
+    if (post.collaborators && post.collaborators.length > 0) {
+        let totalCollaboratorShare = 0;
+        for (let colab of post.collaborators) {
+            const colabEarnings = netPayout * (colab.split / 100);
+            await User.findOneAndUpdate({ identity: colab.node }, { $inc: { earnings: colabEarnings } });
+            totalCollaboratorShare += colabEarnings;
+        }
+        const ownerEarnings = netPayout - totalCollaboratorShare;
+        await User.findOneAndUpdate({ identity: post.owner }, { $inc: { earnings: ownerEarnings } });
+    } else {
+        await User.findOneAndUpdate({ identity: post.owner }, { $inc: { earnings: netPayout } });
+    }
+
+    // 4. TRIGGER CONTENT UNLOCK
+    // Adds user phone to the post's access lists
+    const updateField = tx.type === 'license' 
+        ? { $addToSet: { licensed_to: tx.userPhone } } 
+        : { $addToSet: { unlocked_by: tx.userPhone } };
+    
+    await Post.findByIdAndUpdate(tx.postID, updateField);
+
+    // 5. Finalize Transaction and Notify Socket
+    tx.status = 'completed';
+    await tx.save();
+    io.to(tx.checkoutID).emit('payment_success', { 
+        message: "Nodal Sync Confirmed", 
+        postId: tx.postID,
+        netAmount: netPayout,
+        txType: tx.type 
+    });
+    
+    console.log(`✅ CONTENT UNLOCKED: IP ${tx.postID} for Node ${tx.userPhone}`);
+};
+
+// 8. ROUTES
 
 // --- HEALTH SENTRY ENDPOINT ---
 app.get('/api/health', async (req, res) => {
@@ -319,59 +386,6 @@ app.post('/api/flw-webhook', async (req, res) => {
     }
     res.status(200).end();
 });
-
-// --- UPDATED PROCESS GRID SUCCESS WITH 7.89% SOVEREIGN TAX ---
-const processGridSuccess = async (tx) => {
-    if (tx.status === 'completed') return; 
-
-    const post = await Post.findById(tx.postID);
-    
-    // --- THE SOVEREIGN TAX CALCULATION ---
-    const PLATFORM_TAX_RATE = 0.0789; // Your 7.89%
-    const platformFee = tx.amountPaid * PLATFORM_TAX_RATE;
-    const netPayout = tx.amountPaid - platformFee;
-
-    // Optional: Keep Afro Coin rewards logic
-    const mintResults = await governAfroMinting(tx.amountPaid);
-    const reward = mintResults.user;
-
-    await User.findOneAndUpdate({ identity: tx.userPhone }, { lastSeen: Date.now() }, { upsert: true });
-    
-    // 1. Move the 7.89% to the Protocol Vault (Your Money)
-    await Vault.findOneAndUpdate(
-        { id: 'protocol_vault' }, 
-        { $inc: { balance: platformFee } }, 
-        { upsert: true }
-    );
-    
-    // Reward user with Afro Coins
-    await User.findOneAndUpdate({ identity: tx.userPhone }, { $inc: { afroCoins: reward } });
-    
-    // 2. Handle Creator & Collaborator Payouts
-    if (post) {
-        if (post.collaborators && post.collaborators.length > 0) {
-            let totalCollaboratorShare = 0;
-            for (let colab of post.collaborators) {
-                const colabEarnings = netPayout * (colab.split / 100);
-                await User.findOneAndUpdate({ identity: colab.node }, { $inc: { earnings: colabEarnings } });
-                totalCollaboratorShare += colabEarnings;
-            }
-            const ownerEarnings = netPayout - totalCollaboratorShare;
-            await User.findOneAndUpdate({ identity: post.owner }, { $inc: { afroCoins: reward, earnings: ownerEarnings } });
-        } else {
-            // No collaborators: Owner gets the full Net (92.11%)
-            await User.findOneAndUpdate({ identity: post.owner }, { $inc: { afroCoins: reward, earnings: netPayout } });
-        }
-    }
-
-    const updateField = tx.type === 'license' ? { $addToSet: { licensed_to: tx.userPhone } } : { $addToSet: { unlocked_by: tx.userPhone } };
-    await Post.findByIdAndUpdate(tx.postID, updateField);
-
-    // 3. Mark transaction as done and notify the App
-    tx.status = 'completed';
-    await tx.save();
-    io.to(tx.checkoutID).emit('payment_success', { message: "Nodal Sync Confirmed", netAmount: netPayout, txType: tx.type });
-};
 
 app.post('/api/callback', async (req, res) => {
     const callbackData = req.body.Body.stkCallback;
@@ -533,18 +547,25 @@ app.get('/api/stk-status/:checkoutID', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Polling failed" }); }
 });
 
+// --- GATEKEEPER MEDIA ROUTE ---
 app.get('/api/media/:postId', async (req, res) => {
     try {
         const { phone } = req.query;
+        if (!phone) return res.status(401).send("PHONE_REQUIRED");
+
         const post = await Post.findOne({ _id: req.params.postId, is_burned: false });
         if (!post) return res.status(404).send("NOT_FOUND");
         
         const cleaned = cleanPhone(phone);
+        
+        // CHECK ACCESS: Is owner? OR is in unlocked_by? OR is in licensed_to?
         const hasAccess = post.owner === cleaned || post.unlocked_by.includes(cleaned) || post.licensed_to.includes(cleaned);
+
         if (!hasAccess) return res.status(403).send("LOCKED");
         if (post.is_stream) return res.redirect(post.stream_url);
 
         const filePath = path.join(uploadDir, post.filename);
+        if (!fs.existsSync(filePath)) return res.status(404).send("FILE_PHYSICALLY_MISSING");
 
         if (post.mime.startsWith('image/')) {
             const image = await Jimp.read(filePath);
@@ -564,7 +585,6 @@ app.get('/api/governance/sidebar', async (req, res) => {
         const vault = await Vault.findOne({ id: 'protocol_vault' });
         const nodes = await User.countDocuments({});
         const activeIPs = await Post.countDocuments({ is_burned: false });
-        // Return 7.89 as the standard display for your ledger
         res.json({ 
             nodes, 
             activeIPs, 
@@ -584,7 +604,7 @@ app.get('/api/governance/ledger', async (req, res) => {
         const ledger = transactions.map(tx => ({
             id: tx.checkoutID,
             amount: tx.amountPaid,
-            taxCollected: (tx.amountPaid * 0.0789).toFixed(2),
+            taxCollected: (tx.amountPaid * PROTOCOL_FEE).toFixed(2),
             timestamp: tx.timestamp,
             type: tx.type
         }));
@@ -598,7 +618,12 @@ app.get('/api/stats', async (req, res) => {
         const vault = await Vault.findOne({ id: 'protocol_vault' });
         const userCount = await User.countDocuments({});
         const currentLiveRate = await calculateLiveTax();
-        res.json({ taxVault: vault ? (vault.balance || 0).toFixed(2) : "0.00", userCount: userCount, platformReserve: vault ? (vault.platformAfroReserve || 0).toFixed(2) : "0.00", currentTaxRate: (currentLiveRate * 100).toFixed(2) + "%" });
+        res.json({ 
+            taxVault: vault ? (vault.balance || 0).toFixed(2) : "0.00", 
+            userCount: userCount, 
+            platformReserve: vault ? (vault.platformAfroReserve || 0).toFixed(2) : "0.00", 
+            currentTaxRate: (currentLiveRate * 100).toFixed(2) + "%" 
+        });
     } catch (err) { res.status(500).json({ error: "Stats failure" }); }
 });
 
