@@ -13,12 +13,13 @@ const { Server } = require('socket.io');
 require('dotenv').config();
 
 const app = express();
+app.set('trust proxy', 1); 
+
 const server = http.createServer(app); 
 const io = new Server(server, {
     cors: { origin: "*" }
 });
 
-// --- CINEMATIC LAUNCH SEQUENCE ---
 const launchProtocol = async () => {
     const brand = "iNFLUENSA";
     const subtext = "the power of influens";
@@ -30,18 +31,15 @@ const launchProtocol = async () => {
     console.log("------------------------------------------");
 };
 
-// --- AFRO COIN GENESIS CONSTANTS ---
-const AFRO_HARD_CAP = 1000000000; 
+const AFRO_HARD_CAP = 51000000000; 
 const PROTOCOL_FEE = 0.0789;      
 const MINTING_REWARD_RATE = 0.10; 
 const PLATFORM_RESERVE_SHARE = 0.20; 
 
-// --- NEURAL SENTRY CONFIGURATION ---
 const neuralSentryLog = new Map();
-const MAX_REQUESTS_PER_WINDOW = 100; // Limits nodes to 100 reqs per minute
+const MAX_REQUESTS_PER_WINDOW = 500; 
 const WINDOW_MS = 60000; 
 
-// 1. DIRECTORY & UPLOAD SETUP
 const uploadDir = path.resolve(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
@@ -51,7 +49,6 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 100 * 1024 * 1024 } });
 
-// 2. MIDDLEWARE
 app.use(cors());
 app.use(express.json({ limit: '110mb' })); 
 app.use(express.urlencoded({ limit: '110mb', extended: true }));
@@ -59,6 +56,7 @@ app.use('/uploads', express.static(uploadDir));
 
 // --- NEURAL SENTRY MIDDLEWARE ---
 app.use((req, res, next) => {
+    if (req.path === '/api/health') return next();
     const ip = req.ip;
     const now = Date.now();
     if (!neuralSentryLog.has(ip)) {
@@ -80,12 +78,11 @@ app.use((req, res, next) => {
 
 app.use(express.static(__dirname));
 
-// 3. DATABASE
 mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log('🔥 iNFLUENSA Grid: MongoDB Connected'))
     .catch(err => console.error('❌ Grid Connection Error:', err));
 
-// 4. SCHEMAS
+// --- SCHEMAS ---
 const postSchema = new mongoose.Schema({
     title: String, price: Number, owner: String, mime: String, filename: String, 
     cid: { type: String, unique: true }, unlocked_by: [String], licensed_to: [String],
@@ -119,7 +116,8 @@ const transactionSchema = new mongoose.Schema({
     amountPaid: Number, 
     currency: { type: String, default: 'KES' }, 
     gateway: { type: String, default: 'mpesa' }, 
-    type: { type: String, enum: ['unlock', 'license', 'share_download'] }, 
+    type: { type: String, enum: ['unlock', 'license', 'share_download', 'handshake_fee'] }, 
+    handshakeID: String,
     status: { type: String, default: 'pending' }, 
     timestamp: { type: Number, default: Date.now }
 });
@@ -132,12 +130,12 @@ const handshakeSchema = new mongoose.Schema({
     split: Number,
     signature: String, 
     contractHash: String,
-    status: { type: String, default: 'pending', enum: ['pending', 'accepted', 'rejected', 'countered'] }, 
+    status: { type: String, default: 'pending', enum: ['pending', 'accepted', 'rejected', 'countered', 'paid'] }, 
     timestamp: { type: Number, default: Date.now }
 });
 const Handshake = mongoose.model('Handshake', handshakeSchema);
 
-// 5. HELPERS
+// --- HELPERS ---
 const cleanPhone = (phone) => {
     if(!phone) return "";
     let cleaned = phone.toString().replace(/\D/g, ''); 
@@ -167,7 +165,11 @@ const CURRENCY_MAP = {
     '254': { code: 'KES', rate: 1 },
     '256': { code: 'UGX', rate: 30 }, 
     '255': { code: 'TZS', rate: 20 }, 
-    '234': { code: 'NGN', rate: 11 }  
+    '234': { code: 'NGN', rate: 11 },
+    '250': { code: 'RWF', rate: 10 },
+    '27':  { code: 'ZAR', rate: 0.15 },
+    '44':  { code: 'GBP', rate: 0.006 },
+    '1':   { code: 'USD', rate: 0.007 }
 };
 
 const getCurrencyByPhone = (phone) => {
@@ -177,57 +179,113 @@ const getCurrencyByPhone = (phone) => {
     return CURRENCY_MAP['254'];
 };
 
-const triggerUniversalPush = async (phone, amountInKES, postId, type) => {
+const triggerUniversalPush = async (phone, amountInKES, postId, type, handshakeId = null) => {
     const formattedPhone = cleanPhone(phone);
+    if (!formattedPhone) throw new Error("IDENT_SIGNAL_LOST");
+    
     const currencyData = getCurrencyByPhone(formattedPhone);
     const convertedAmount = Math.ceil(amountInKES * currencyData.rate);
     
-    if (formattedPhone.startsWith('254')) {
-        return await triggerStkPush(formattedPhone, convertedAmount, postId, type);
-    } 
-    return await triggerFlutterwavePush(formattedPhone, convertedAmount, currencyData.code, postId, type);
+    try {
+        if (formattedPhone.startsWith('254')) {
+            return await triggerStkPush(formattedPhone, convertedAmount, postId, type, handshakeId);
+        } 
+        return await triggerFlutterwavePush(formattedPhone, convertedAmount, currencyData.code, postId, type, handshakeId);
+    } catch (err) {
+        console.error(`❌ SYNC_DISRUPTION: ${err.message}`);
+        throw err;
+    }
 };
+
+// --- OPTIMIZED MPESA LOGIC ---
+let mpesaTokenCache = {
+    token: null,
+    expiry: 0
+};
+
+const getMpesaBaseUrl = () => "https://sandbox.safaricom.co.ke";
 
 const getMpesaToken = async () => {
-    const auth = Buffer.from(`${process.env.MPESA_CONSUMER_KEY}:${process.env.MPESA_CONSUMER_SECRET}`).toString('base64');
-    const res = await axios.get('https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials', {
-        headers: { Authorization: `Basic ${auth}` }
-    });
-    return res.data.access_token;
+    const now = Date.now();
+    if (mpesaTokenCache.token && now < mpesaTokenCache.expiry) {
+        return mpesaTokenCache.token;
+    }
+
+    try {
+        const baseUrl = getMpesaBaseUrl();
+        console.log(`🌐 Syncing with Gateway: ${baseUrl}`);
+        console.log("🔍 MPESA: Syncing Neural Token...");
+        
+        const consumerKey = (process.env.MPESA_CONSUMER_KEY || "").trim();
+        const consumerSecret = (process.env.MPESA_CONSUMER_SECRET || "").trim();
+        const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
+        
+        const res = await axios.get(`${baseUrl}/oauth/v1/generate?grant_type=client_credentials`, {
+            headers: { Authorization: `Basic ${auth}` },
+            timeout: 10000
+        });
+        
+        mpesaTokenCache.token = res.data.access_token;
+        mpesaTokenCache.expiry = now + (3500 * 1000); 
+        
+        console.log("✅ MPESA: Token Synchronized");
+        return res.data.access_token;
+    } catch (error) {
+        console.error("❌ MPESA TOKEN SYNC ERROR:", error.response?.data || error.message);
+        throw new Error("FAILED_TO_SYNC_WITH_SAFARICOM");
+    }
 };
 
-const triggerStkPush = async (phone, amount, postId, type) => {
-    const token = await getMpesaToken();
-    const date = new Date();
-    const timestamp = date.getFullYear() + ("0" + (date.getMonth() + 1)).slice(-2) + ("0" + date.getDate()).slice(-2) + ("0" + date.getHours()).slice(-2) + ("0" + date.getMinutes()).slice(-2) + ("0" + date.getSeconds()).slice(-2);
-    const password = Buffer.from(`${process.env.MPESA_SHORTCODE}${process.env.MPESA_PASSKEY}${timestamp}`).toString('base64');
-    
-    const payload = {
-        "BusinessShortCode": process.env.MPESA_SHORTCODE,
-        "Password": password,
-        "Timestamp": timestamp,
-        "TransactionType": "CustomerPayBillOnline",
-        "Amount": Math.ceil(amount),
-        "PartyA": phone,
-        "PartyB": process.env.MPESA_SHORTCODE,
-        "PhoneNumber": phone,
-        "CallBackURL": process.env.MPESA_CALLBACK_URL,
-        "AccountReference": `IP${postId.toString().slice(-8).toUpperCase()}`,
-        "TransactionDesc": `iNFLUENSA ${type.toUpperCase()}`
-    };
+const triggerStkPush = async (phone, amount, postId, type, handshakeId = null) => {
+    try {
+        const token = await getMpesaToken();
+        const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
+        
+        const shortCode = (process.env.MPESA_SHORTCODE || "").trim();
+        const passKey = (process.env.MPESA_PASSKEY || "").trim();
+        const callbackUrl = (process.env.MPESA_CALLBACK_URL || "").trim();
+        
+        const password = Buffer.from(`${shortCode}${passKey}${timestamp}`).toString('base64');
+        
+        const payload = {
+            "BusinessShortCode": shortCode,
+            "Password": password,
+            "Timestamp": timestamp,
+            "TransactionType": "CustomerBuyGoodsOnline",
+            "Amount": Math.round(amount), 
+            "PartyA": phone,
+            "PartyB": shortCode,
+            "PhoneNumber": phone,
+            "CallBackURL": callbackUrl,
+            "AccountReference": `IP-${postId.toString().slice(-6).toUpperCase()}`,
+            "TransactionDesc": `iNFLUENSA ${type.toUpperCase()}`
+        };
 
-    const response = await axios.post("https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest", payload, { 
-        headers: { 'Authorization': `Bearer ${token}` } 
-    });
+        console.log(`🛰️ MPESA: DISPATCHING STK TO ${phone} | AMT: ${amount}`);
+        
+        const response = await axios.post(`${getMpesaBaseUrl()}/mpesa/stkpush/v1/processrequest`, payload, { 
+            headers: { 'Authorization': `Bearer ${token}` },
+            timeout: 15000
+        });
 
-    await Transaction.create({
-        checkoutID: response.data.CheckoutRequestID,
-        postID: postId, userPhone: phone, amountPaid: amount, type, gateway: 'mpesa', currency: 'KES'
-    });
-    return response.data;
+        if (!response.data || !response.data.CheckoutRequestID) {
+            throw new Error("GATEWAY_EMPTY_RESPONSE");
+        }
+
+        await Transaction.create({
+            checkoutID: response.data.CheckoutRequestID,
+            postID: postId, userPhone: phone, amountPaid: amount, type, gateway: 'mpesa', currency: 'KES', handshakeID: handshakeId
+        });
+        
+        return response.data;
+    } catch (error) {
+        const errorDetail = error.response?.data || error.message;
+        console.error("❌ MPESA STK CRITICAL FAILURE:", JSON.stringify(errorDetail, null, 2));
+        throw new Error(errorDetail.errorMessage || "STK_PUSH_DISRUPTED");
+    }
 };
 
-const triggerFlutterwavePush = async (phone, amount, currency, postId, type) => {
+const triggerFlutterwavePush = async (phone, amount, currency, postId, type, handshakeId = null) => {
     const tx_ref = `FLW-${Date.now()}-${postId.toString().slice(-4)}`;
     let network = "MTN"; 
     if(phone.startsWith('255')) network = "TIGO";
@@ -238,25 +296,34 @@ const triggerFlutterwavePush = async (phone, amount, currency, postId, type) => 
         email: "node@influensa.io",
         phone_number: phone,
         fullname: "iNFLUENSA Node",
-        callback_url: process.env.FLW_CALLBACK_URL
+        callback_url: (process.env.FLW_CALLBACK_URL || "").trim()
     };
 
-    const response = await axios.post("https://api.flutterwave.com/v3/charges?type=mobile_money_uganda", payload, {
-        headers: { Authorization: `Bearer ${process.env.FLW_SECRET_KEY}` },
-        timeout: 15000 
-    });
+    try {
+        console.log(`🛰️ FLW: INITIATING PUSH TO ${phone}`);
+        const response = await axios.post("https://api.flutterwave.com/v3/charges?type=mobile_money_uganda", payload, {
+            headers: { Authorization: `Bearer ${(process.env.FLW_SECRET_KEY || "").trim()}` },
+            timeout: 15000 
+        });
 
-    await Transaction.create({
-        checkoutID: tx_ref, 
-        postID: postId, userPhone: phone, amountPaid: amount, type, gateway: 'flutterwave', currency
-    });
+        await Transaction.create({
+            checkoutID: tx_ref, 
+            postID: postId, userPhone: phone, amountPaid: amount, type, gateway: 'flutterwave', currency, handshakeID: handshakeId
+        });
 
-    return { CheckoutRequestID: tx_ref }; 
+        return { CheckoutRequestID: tx_ref }; 
+    } catch (error) {
+        console.error("❌ FLW PUSH ERROR:", error.response?.data || error.message);
+        throw error;
+    }
 };
 
-// 6. REAL-TIME SOCKET LOGIC
+// --- FLUID SOCKET LOGIC ---
 io.on('connection', (socket) => {
-    socket.on('join_payment_room', (checkoutID) => socket.join(checkoutID));
+    socket.on('join_payment_room', (checkoutID) => {
+        socket.join(checkoutID);
+        console.log(`🔌 Node listening for Sync: ${checkoutID}`);
+    });
     
     socket.on('watch_post', (postId) => {
         socket.join(`viewers_${postId}`);
@@ -283,7 +350,6 @@ io.on('connection', (socket) => {
     });
 });
 
-// 7. CORE UTILITY: PROCESS GRID SUCCESS (7.89% TAX & UNLOCK LOGIC)
 const processGridSuccess = async (tx) => {
     if (tx.status === 'completed') return; 
 
@@ -293,66 +359,65 @@ const processGridSuccess = async (tx) => {
         return;
     }
 
-    // --- THE SOVEREIGN TAX CALCULATION (7.89%) ---
     const platformFee = tx.amountPaid * PROTOCOL_FEE;
     const netPayout = tx.amountPaid - platformFee;
-
-    // Afro Coin rewards logic
     const mintResults = await governAfroMinting(tx.amountPaid);
     const reward = mintResults.user;
 
-    // 1. Move the 7.89% to the Protocol Vault (Protocol Revenue)
-    await Vault.findOneAndUpdate(
-        { id: 'protocol_vault' }, 
-        { $inc: { balance: platformFee } }, 
-        { upsert: true }
-    );
-    
-    // 2. Update User Identity and Afro Rewards
-    await User.findOneAndUpdate(
-        { identity: tx.userPhone }, 
-        { $inc: { afroCoins: reward }, lastSeen: Date.now() }, 
-        { upsert: true }
-    );
-    
-    // 3. Handle Creator & Collaborator Payouts (Distributing Net 92.11%)
-    if (post.collaborators && post.collaborators.length > 0) {
-        let totalCollaboratorShare = 0;
-        for (let colab of post.collaborators) {
-            const colabEarnings = netPayout * (colab.split / 100);
-            await User.findOneAndUpdate({ identity: colab.node }, { $inc: { earnings: colabEarnings } });
-            totalCollaboratorShare += colabEarnings;
+    await Vault.findOneAndUpdate({ id: 'protocol_vault' }, { $inc: { balance: platformFee } }, { upsert: true });
+    await User.findOneAndUpdate({ identity: tx.userPhone }, { $inc: { afroCoins: reward }, lastSeen: Date.now() }, { upsert: true });
+
+    if (tx.type === 'handshake_fee') {
+        const handshake = await Handshake.findById(tx.handshakeID);
+        if (handshake) {
+            await Post.findByIdAndUpdate(tx.postID, { 
+                $push: { 
+                    collaborators: { 
+                        node: handshake.sender, 
+                        signature: handshake.signature, 
+                        split: handshake.split, 
+                        contractHash: handshake.contractHash, 
+                        signedAt: Date.now() 
+                    } 
+                } 
+            });
+            handshake.status = 'paid';
+            await handshake.save();
         }
-        const ownerEarnings = netPayout - totalCollaboratorShare;
-        await User.findOneAndUpdate({ identity: post.owner }, { $inc: { earnings: ownerEarnings } });
     } else {
-        await User.findOneAndUpdate({ identity: post.owner }, { $inc: { earnings: netPayout } });
+        if (post.collaborators && post.collaborators.length > 0) {
+            let totalCollaboratorShare = 0;
+            for (let colab of post.collaborators) {
+                const colabEarnings = netPayout * (colab.split / 100);
+                await User.findOneAndUpdate({ identity: colab.node }, { $inc: { earnings: colabEarnings } });
+                totalCollaboratorShare += colabEarnings;
+            }
+            const ownerEarnings = netPayout - totalCollaboratorShare;
+            await User.findOneAndUpdate({ identity: post.owner }, { $inc: { earnings: ownerEarnings } });
+        } else {
+            await User.findOneAndUpdate({ identity: post.owner }, { $inc: { earnings: netPayout } });
+        }
+
+        let updateField = (tx.type === 'license') 
+            ? { $addToSet: { licensed_to: tx.userPhone } } 
+            : { $addToSet: { unlocked_by: tx.userPhone } };
+        
+        await Post.findByIdAndUpdate(tx.postID, updateField);
     }
 
-    // 4. TRIGGER CONTENT UNLOCK
-    // Adds user phone to the post's access lists
-    const updateField = tx.type === 'license' 
-        ? { $addToSet: { licensed_to: tx.userPhone } } 
-        : { $addToSet: { unlocked_by: tx.userPhone } };
-    
-    await Post.findByIdAndUpdate(tx.postID, updateField);
-
-    // 5. Finalize Transaction and Notify Socket
     tx.status = 'completed';
     await tx.save();
+    
     io.to(tx.checkoutID).emit('payment_success', { 
-        message: "Nodal Sync Confirmed", 
+        message: tx.type === 'handshake_fee' ? "Contract Sync Active" : "Nodal Sync Confirmed", 
         postId: tx.postID,
-        netAmount: netPayout,
         txType: tx.type 
     });
     
-    console.log(`✅ CONTENT UNLOCKED: IP ${tx.postID} for Node ${tx.userPhone}`);
+    console.log(`✅ SYNC COMPLETE: IP ${tx.postID} for Node ${tx.userPhone}`);
 };
 
-// 8. ROUTES
-
-// --- HEALTH SENTRY ENDPOINT ---
+// --- ROUTES ---
 app.get('/api/health', async (req, res) => {
     const healthData = {
         status: 'SIGNAL_STRONG',
@@ -388,20 +453,32 @@ app.post('/api/flw-webhook', async (req, res) => {
 });
 
 app.post('/api/callback', async (req, res) => {
-    const callbackData = req.body.Body.stkCallback;
+    console.log("📥 RECEIVED CALLBACK FROM SAFARICOM:", JSON.stringify(req.body, null, 2));
+    
+    const body = req.body;
+    if (!body || !body.Body || !body.Body.stkCallback) return res.status(400).end();
+    
+    const callbackData = body.Body.stkCallback;
     const checkoutID = callbackData.CheckoutRequestID;
     try {
         const tx = await Transaction.findOne({ checkoutID });
-        if (!tx) return res.json({ ResultCode: 0 }); 
+        if (!tx) {
+            console.warn(`⚠️ Callback received for unknown CheckoutID: ${checkoutID}`);
+            return res.json({ ResultCode: 0 }); 
+        }
         if (callbackData.ResultCode === 0) {
             await processGridSuccess(tx);
         } else { 
+            console.log(`❌ Transaction Failed at Gateway: ${checkoutID} | Reason: ${callbackData.ResultDesc}`);
             tx.status = 'failed';
             await tx.save();
             io.to(checkoutID).emit('payment_failed');
         }
         res.json({ ResultCode: 0 });
-    } catch (err) { res.json({ ResultCode: 1 }); }
+    } catch (err) { 
+        console.error("❌ CALLBACK PROCESSING ERROR:", err);
+        res.json({ ResultCode: 1 }); 
+    }
 });
 
 app.post('/api/posts/:id/unlock', async (req, res) => {
@@ -409,10 +486,18 @@ app.post('/api/posts/:id/unlock', async (req, res) => {
     try {
         const post = await Post.findById(req.params.id);
         if (!post) return res.status(404).json({ error: "IP not found" });
-        let rawPriceKES = (type === 'share_download' || type === 'license') ? post.price * 0.5 : post.price;
+        let rawPriceKES = (type === 'share_download' || type === 'license') ? post.price * 10.0 : post.price;
         const result = await triggerUniversalPush(phone, Math.max(1, Math.ceil(rawPriceKES)), post._id, type || 'unlock');
-        res.json({ success: true, checkoutID: result.CheckoutRequestID });
-    } catch (err) { res.status(500).json({ error: "Universal Sync Failed" }); }
+        
+        if (result && (result.CheckoutRequestID || result.tx_ref)) {
+            res.json({ success: true, checkoutID: result.CheckoutRequestID || result.tx_ref });
+        } else {
+            throw new Error("GATEWAY_FAILED_TO_GENERATE_SYNC_ID");
+        }
+    } catch (err) { 
+        console.error("❌ UNLOCK ERROR:", err.message);
+        res.status(500).json({ error: "Universal Sync Failed", details: err.message }); 
+    }
 });
 
 app.post('/api/nodes/withdraw', async (req, res) => {
@@ -436,7 +521,7 @@ app.post('/api/nodes/withdraw', async (req, res) => {
         };
 
         const response = await axios.post("https://api.flutterwave.com/v3/transfers", payload, {
-            headers: { Authorization: `Bearer ${process.env.FLW_SECRET_KEY}` },
+            headers: { Authorization: `Bearer ${(process.env.FLW_SECRET_KEY || "").trim()}` },
             timeout: 15000 
         });
 
@@ -484,8 +569,14 @@ app.get('/api/handshake/outgoing/:identity', async (req, res) => {
 app.post('/api/handshake/counter/:id', async (req, res) => {
     try {
         const { split } = req.body;
-        await Handshake.findByIdAndUpdate(req.params.id, { split, status: 'countered', timestamp: Date.now() });
-        res.json({ success: true });
+        const handshake = await Handshake.findByIdAndUpdate(req.params.id, { 
+            split, 
+            status: 'countered', 
+            timestamp: Date.now() 
+        }, { new: true });
+        
+        const result = await triggerUniversalPush(handshake.sender, 10, handshake.postId, 'handshake_fee', handshake._id);
+        res.json({ success: true, checkoutID: result.CheckoutRequestID || result.tx_ref });
     } catch (err) { res.status(500).json({ error: "Negotiation Sync Failed" }); }
 });
 
@@ -517,9 +608,10 @@ app.get('/api/handshake/pending/:identity', async (req, res) => {
 app.post('/api/handshake/accept/:id', async (req, res) => {
     try {
         const handshake = await Handshake.findById(req.params.id);
-        await Post.findByIdAndUpdate(handshake.postId, { $push: { collaborators: { node: handshake.sender, signature: handshake.signature, split: handshake.split, contractHash: handshake.contractHash, signedAt: Date.now() } } });
-        handshake.status = 'accepted'; await handshake.save();
-        res.json({ success: true });
+        const result = await triggerUniversalPush(handshake.sender, 10, handshake.postId, 'handshake_fee', handshake._id);
+        handshake.status = 'accepted'; 
+        await handshake.save();
+        res.json({ success: true, checkoutID: result.CheckoutRequestID || result.tx_ref });
     } catch (err) { res.status(500).json({ error: "Handshake Sync Failure" }); }
 });
 
@@ -547,7 +639,6 @@ app.get('/api/stk-status/:checkoutID', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Polling failed" }); }
 });
 
-// --- GATEKEEPER MEDIA ROUTE ---
 app.get('/api/media/:postId', async (req, res) => {
     try {
         const { phone } = req.query;
@@ -557,8 +648,6 @@ app.get('/api/media/:postId', async (req, res) => {
         if (!post) return res.status(404).send("NOT_FOUND");
         
         const cleaned = cleanPhone(phone);
-        
-        // CHECK ACCESS: Is owner? OR is in unlocked_by? OR is in licensed_to?
         const hasAccess = post.owner === cleaned || post.unlocked_by.includes(cleaned) || post.licensed_to.includes(cleaned);
 
         if (!hasAccess) return res.status(403).send("LOCKED");
@@ -575,11 +664,34 @@ app.get('/api/media/:postId', async (req, res) => {
             return res.type('image/jpeg').send(buffer);
         }
 
+        if (post.mime.startsWith('video/')) {
+            res.contentType('video/mp4');
+            ffmpeg(filePath)
+                .videoFilters({
+                    filter: 'drawtext',
+                    options: {
+                        text: `iNFLUENSA | NODE:${cleaned}`,
+                        fontcolor: 'white@0.4',
+                        fontsize: 18,
+                        x: 'w-tw-10',
+                        y: 'h-th-10',
+                        box: 1,
+                        boxcolor: 'black@0.3'
+                    }
+                })
+                .format('mp4')
+                .outputOptions('-movflags frag_keyframe+empty_moov')
+                .on('error', (err) => {
+                    console.error('FFmpeg Stream Error:', err);
+                })
+                .pipe(res, { end: true });
+            return;
+        }
+
         res.sendFile(filePath);
     } catch (err) { res.status(500).send("GRID_ERROR"); }
 });
 
-// --- UPDATED GOVERNANCE SIDEBAR WITH LEDGER SUPPORT ---
 app.get('/api/governance/sidebar', async (req, res) => {
     try {
         const vault = await Vault.findOne({ id: 'protocol_vault' });
@@ -594,7 +706,6 @@ app.get('/api/governance/sidebar', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Governance Offline" }); }
 });
 
-// --- NEW LEDGER ROUTE FOR VISUAL TRACKING ---
 app.get('/api/governance/ledger', async (req, res) => {
     try {
         const transactions = await Transaction.find({ status: 'completed' })
@@ -647,8 +758,37 @@ app.delete('/api/posts/:id', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Burn failed" }); }
 });
 
+// --- NEW SUGGESTIONS: PLUG AND PLAY SOCIAL API ---
+
+app.get('/api/share/:postId', async (req, res) => {
+    try {
+        const post = await Post.findById(req.params.postId);
+        if (!post) return res.status(404).json({ error: "IP_NOT_FOUND" });
+
+        const baseUrl = process.env.BASE_URL || `http://${req.headers.host}`;
+        const shareUrl = `${baseUrl}/p/${post._id}`;
+        const encodedUrl = encodeURIComponent(shareUrl);
+        const encodedText = encodeURIComponent(`Unlock exclusive IP on iNFLUENSA: ${post.title}`);
+
+        res.json({
+            title: post.title,
+            link: shareUrl,
+            platforms: {
+                whatsapp: `https://wa.me/?text=${encodedText}%20${encodedUrl}`,
+                twitter: `https://twitter.com/intent/tweet?text=${encodedText}&url=${encodedUrl}`,
+                facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`,
+                telegram: `https://t.me/share/url?url=${encodedUrl}&text=${encodedText}`,
+                linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${encodedUrl}`
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ error: "SOCIAL_SYNC_FAILURE" });
+    }
+});
+
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, '0.0.0.0', async () => {
     await launchProtocol();
     console.log(`🚀 MASTER GRID ACTIVE | PORT: ${PORT}`);
+    console.log(`🔗 CALLBACK URL TARGET: ${process.env.MPESA_CALLBACK_URL}`);
 });
