@@ -1,1075 +1,1025 @@
-<!DOCTYPE html>
-<html lang="en" class="scroll-smooth">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>iNFLUENSA — Afro-Futurist IP Protocol</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Syncopate:wght@400;700&display=swap" rel="stylesheet">
-  <style>
-    :root { 
-      --solar: #facc15; 
-      --bg: #0a0e1f; 
-      --neon-cyan: #67e8f9;
-      --deep-mesh: rgba(15, 23, 42, 0.9);
-      --pulse-red: #ef4444;
+const express = require('express');
+const mongoose = require('mongoose');
+const multer = require('multer');
+const crypto = require('crypto');
+const path = require('path');
+const fs = require('fs');
+const cors = require('cors');
+const axios = require('axios');
+const Jimp = require('jimp'); 
+const ffmpeg = require('fluent-ffmpeg'); 
+const http = require('http'); 
+const { Server } = require('socket.io'); 
+require('dotenv').config();
+
+const { Storage } = require('@google-cloud/storage');
+const app = express();
+app.set('trust proxy', 1); 
+
+const server = http.createServer(app); 
+const io = new Server(server, {
+    cors: { origin: "*" }
+});
+
+const launchProtocol = async () => {
+    const brand = "iNFLUENSA";
+    const subtext = "the power of influens";
+    for (let char of brand) {
+        process.stdout.write(char + " ");
+        await new Promise(resolve => setTimeout(resolve, 150));
     }
-    body { 
-      font-family: 'Space Grotesk', sans-serif; 
-      background: var(--bg); 
-      color: #e0e7ff;
-      background-image: radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.15), transparent 50%);
-      
-      /* FRONTEND SHIELD: STOP TEXT SELECTION */
-      -webkit-user-select: none;
-      -moz-user-select: none;
-      -ms-user-select: none;
-      user-select: none;
-    }
-
-    /* FRONTEND SHIELD: ANTI-SCREENSHOT/PRINT BLUR */
-    @media print {
-        body { display: none !important; }
-        .no-print { display: none !important; }
-    }
-
-    .logo-text { font-family: 'Syncopate', sans-serif; letter-spacing: 6px; background: linear-gradient(90deg, #facc15, #67e8f9); -webkit-background-clip: text; color: transparent; }
-    
-    .glitch-hover:hover {
-      animation: glitch 0.3s cubic-bezier(.25,.46,.45,.94) both infinite;
-    }
-    @keyframes glitch {
-      0% { transform: translate(0); }
-      20% { transform: translate(-2px, 2px); }
-      40% { transform: translate(-2px, -2px); }
-      60% { transform: translate(2px, 2px); }
-      80% { transform: translate(2px, -2px); }
-      100% { transform: translate(0); }
-    }
-
-    .glass { background: rgba(255,255,255,0.03); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.08); border-radius: 1.5rem; transition: all 0.5s ease; }
-    .glass-dark { background: rgba(0,0,0,0.4); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.05); }
-    .input-field { background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(255,255,255,0.1); color: white; transition: 0.2s; }
-    .input-field:focus { border-color: var(--solar); outline: none; box-shadow: 0 0 15px rgba(250, 204, 21, 0.1); }
-    .btn-glow { transition: 0.3s; box-shadow: 0 0 20px rgba(250,204,21,0.1); }
-    .btn-glow:hover { box-shadow: 0 0 40px rgba(250, 204, 21, 0.4); transform: translateY(-2px); }
-    .stamped-bg { background-image: radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px); background-size: 12px 12px; }
-    .progress-ring { transition: stroke-dashoffset 0.35s; transform: rotate(-90deg); transform-origin: 50% 50%; }
-    #searchContainer { transition: all 0.4s ease; border: 1px solid rgba(255,255,255,0.05); }
-    #searchContainer:focus-within { border-color: var(--solar); transform: translateY(-2px); background: rgba(255,255,255,0.05); }
-    .no-scrollbar::-webkit-scrollbar { display: none; }
-    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-    .handshake-shake:hover { animation: shake 0.5s infinite alternate; }
-    @keyframes shake { from { transform: rotate(-10deg); } to { transform: rotate(10deg); } }
-    #cinematicLaunch { background: #0a0e1f; z-index: 200; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-    .launch-letter { opacity: 0; display: inline-block; transform: scale(1.5); transition: all 0.4s ease; }
-    .launch-letter.active { opacity: 1; transform: scale(1); }
-    .anti-piracy-overlay { pointer-events: none; background: repeating-linear-gradient(45deg, rgba(250,204,21,0.03) 0, rgba(250,204,21,0.03) 1px, transparent 0, transparent 50%); background-size: 30px 30px; }
-    #sig-canvas { cursor: crosshair; background: rgba(255,255,255,0.05); border: 1px dashed rgba(255,255,255,0.2); }
-    
-    /* MODIFIED: Polling Pulse Animation */
-    @keyframes pulse-yellow {
-      0% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.7; transform: scale(0.98); }
-      100% { opacity: 1; transform: scale(1); }
-    }
-    .processing-payout { 
-        animation: pulse-yellow 1.5s infinite; 
-        background: #854d0e !important; 
-        color: white !important; 
-        cursor: wait !important;
-    }
-
-    .has-offer::after { content: ''; position: absolute; top: 0; right: 0; width: 12px; height: 12px; background: #22c55e; border: 2px solid #0a0e1f; border-radius: 50%; box-shadow: 0 0 10px #22c55e; }
-    #sig-review-img { max-width: 100%; border-radius: 12px; border: 1px solid rgba(250, 204, 21, 0.3); background: rgba(0,0,0,0.4); }
-    .cyber-border { border-left: 2px solid var(--solar); }
-    .tab-active { color: var(--solar); border-bottom: 2px solid var(--solar); }
-    .stat-card { border-left: 2px solid rgba(255,255,255,0.1); padding-left: 1rem; }
-    @keyframes scanline { 0% { top: 0; } 100% { top: 100%; } }
-    .scan-line { position: absolute; width: 100%; height: 2px; background: rgba(250,204,21,0.2); animation: scanline 4s linear infinite; }
-
-    .audio-bar { width: 3px; background: var(--solar); border-radius: 2px; animation: bar-grow 1s ease-in-out infinite alternate; }
-    @keyframes bar-grow { 0% { height: 4px; } 100% { height: 20px; } }
-
-    #toast-container { position: fixed; top: 2rem; right: 2rem; z-index: 1000; display: flex; flex-direction: column; gap: 0.5rem; }
-    .toast { background: rgba(0,0,0,0.8); border: 1px solid var(--solar); padding: 1rem; border-radius: 0.75rem; font-size: 0.75rem; color: white; backdrop-filter: blur(10px); animation: slide-in 0.3s ease-out; }
-    @keyframes slide-in { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-
-    .burning { 
-        filter: grayscale(1) contrast(3) brightness(2);
-        opacity: 0;
-        transform: scale(0.9) translateY(20px);
-        transition: all 0.8s ease-out;
-        pointer-events: none;
-    }
-    
-    .legal-seal { border: 2px solid var(--solar); border-radius: 50%; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; font-weight: 900; color: var(--solar); position: absolute; bottom: 40px; right: 40px; transform: rotate(-15deg); opacity: 0.6; }
-  </style>
-</head>
-<body class="antialiased p-5 lg:p-12 overflow-hidden">
-
-<div id="toast-container"></div>
-
-<div id="cinematicLaunch" class="fixed inset-0">
-    <div id="launchText" class="logo-text text-5xl md:text-7xl font-bold mb-4 glitch-hover"></div>
-    <div id="launchSub" class="text-[10px] uppercase tracking-[0.6em] text-cyan-400 opacity-0 transition-opacity duration-1000">the power of influens</div>
-</div>
-
-<div id="neuralErrorOverlay" class="fixed inset-0 z-[500] bg-red-950/90 backdrop-blur-xl hidden flex flex-col items-center justify-center p-6">
-    <div class="text-6xl mb-4">⚠️</div>
-    <h2 class="text-2xl font-bold uppercase tracking-widest text-white">Mesh Disconnected</h2>
-    <p id="errorMessage" class="text-red-400 font-mono text-sm mt-2 mb-8">PROTOCOL_ERROR: SYNC_INTERRUPTED</p>
-    <button onclick="window.location.reload()" class="px-8 py-3 bg-white text-black font-bold uppercase tracking-tighter hover:bg-red-200 transition-all">Attempt Re-link</button>
-</div>
-
-<div id="initOverlay" class="fixed inset-0 z-[100] bg-[#0a0e1f] flex items-center justify-center p-6 hidden">
-  <div class="glass p-10 w-full max-w-md text-center border-yellow-500/20">
-    <h1 class="logo-text text-3xl font-bold mb-2 uppercase">iNFLUENSA</h1>
-    <p class="text-[10px] uppercase tracking-[0.3em] text-cyan-400 mb-8 font-bold">Initialize Neural Link</p>
-    <div class="space-y-4">
-      <input id="phoneInput" type="tel" class="input-field w-full p-5 rounded-2xl text-center text-xl tracking-widest font-bold" placeholder="2547..."/>
-      <div class="flex gap-2">
-          <select id="langSelect" class="bg-white/5 border border-white/10 rounded-xl px-4 text-[10px] uppercase font-bold text-slate-400">
-              <option value="en">ENG</option>
-              <option value="sw">SWA</option>
-          </select>
-          <button onclick="initializeGrid()" class="btn-glow flex-1 py-5 rounded-2xl bg-yellow-500 text-black font-black uppercase text-sm tracking-[0.2em]">Initialize Grid</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="max-w-7xl mx-auto relative">
-  <header class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 mb-8">
-    <div class="relative group cursor-pointer" onclick="triggerEasterEgg()">
-      <h1 class="logo-text text-4xl font-bold uppercase glitch-hover">iNFLUENSA</h1>
-      <div class="flex gap-4 mt-2">
-        <p class="opacity-70 text-[9px] tracking-[0.3em] uppercase font-bold text-cyan-400"> V5.3 MASTER</p>
-        <p id="protocolUsers" class="text-[9px] text-yellow-500 font-bold uppercase tracking-[0.3em]">CONNECTING NODES...</p>
-      </div>
-    </div>
-    
-    <div class="flex flex-wrap gap-4">
-      <button onclick="toggleAnalytics()" class="glass px-4 flex items-center justify-center hover:border-cyan-500/50 transition-all">
-          <span class="text-xl">📊</span>
-      </button>
-
-      <button onclick="viewActiveHandshakes()" id="handshakeNotifyBtn" class="glass px-4 flex items-center justify-center relative border-white/5 hover:border-yellow-500/50 transition-all">
-         <span class="text-xl">🤝</span>
-         <div id="handshakeDot" class="hidden absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full animate-pulse shadow-[0_0_10px_#22c55e]"></div>
-      </button>
-
-      <div class="glass px-6 py-3 text-[11px] font-mono border-yellow-500/20 bg-yellow-500/5">
-        <div id="taxVaultDisplay" class="text-yellow-500 font-bold tracking-widest uppercase text-right">KES 0.00</div>
-        <div class="text-[7px] opacity-40 uppercase tracking-tighter text-right">Global Tax Vault (<span id="vaultPercentDisplay">7.89</span>%)</div>
-      </div>
-      <div id="walletDisplay" class="flex items-center gap-4">
-          <div class="glass px-6 py-3 text-[11px] font-mono border-white/5 flex flex-col items-end">
-             <div class="flex items-center gap-3">
-                <span id="afroCoinsDisplay" class="text-cyan-400 font-bold tracking-tighter">0.00 AFRO</span>
-                <span class="w-px h-3 bg-white/10"></span>
-                <span id="earningsDisplay" class="text-yellow-500 font-bold tracking-tighter">KES 0.00</span>
-                <button onclick="requestWithdrawal()" class="ml-2 text-[8px] bg-yellow-500/20 hover:bg-yellow-500 hover:text-black text-yellow-500 px-2 py-1 rounded-md font-bold transition-all uppercase tracking-tighter">Withdraw</button>
-                </div>
-             <div id="nodeID" class="text-[7px] opacity-30 uppercase tracking-[0.2em] mt-1">LINKING NODE...</div>
-          </div>
-      </div>
-    </div>
-  </header>
-
-  <div id="searchContainer" class="glass mb-8 flex items-center overflow-hidden">
-    <div class="pl-6 opacity-30 text-xl">🔍</div>
-    <input id="searchInput" type="text" oninput="debounceSearch(this.value)" class="w-full bg-transparent p-6 outline-none text-xl font-light placeholder:text-slate-600" placeholder="Search IP by Title, Creator, or CID..."/>
-    <div class="flex gap-2 pr-6">
-        <button onclick="filterBy('all')" class="text-[9px] font-bold uppercase px-3 py-1 bg-white/10 rounded-full text-yellow-500">All</button>
-        <button onclick="filterBy('audio')" class="text-[9px] font-bold uppercase px-3 py-1 bg-white/5 rounded-full hover:bg-white/10">Audio</button>
-        <button onclick="filterBy('video')" class="text-[9px] font-bold uppercase px-3 py-1 bg-white/5 rounded-full hover:bg-white/10">Video</button>
-    </div>
-  </div>
-
-  <main class="grid lg:grid-cols-12 gap-8">
-    <aside id="analyticsSidebar" class="hidden lg:col-span-3 space-y-6">
-        <div class="glass p-6 border-cyan-500/20">
-            <h3 class="text-[10px] font-black uppercase tracking-[0.4em] text-cyan-400 mb-6">Node Performance</h3>
-            <div class="space-y-6">
-                <div class="stat-card">
-                    <div class="text-slate-500 text-[9px] uppercase">Neural Uplink</div>
-                    <div class="text-xl font-bold">99.2%</div>
-                </div>
-                <div class="stat-card">
-                    <div class="text-slate-500 text-[9px] uppercase">IP Circulation</div>
-                    <div id="circulationDisplay" class="text-xl font-bold">...</div>
-                </div>
-                <div class="stat-card">
-                    <div class="text-slate-500 text-[9px] uppercase">Gas Efficiency</div>
-                    <div class="text-xl font-bold text-green-500">LOW_FEE</div>
-                </div>
-            </div>
-            <div class="mt-8 pt-6 border-t border-white/5">
-                <p class="text-[8px] text-slate-500 leading-relaxed uppercase">The iNFLUENSA protocol utilizes sharded consensus to ensure sub-second IP registration across all Kenyan nodes.</p>
-            </div>
-        </div>
-        
-        <div class="glass p-6 border-yellow-500/10">
-            <h3 class="text-[10px] font-black uppercase tracking-[0.4em] text-yellow-500 mb-4">Governance Phase 1</h3>
-            <div class="bg-black/40 p-4 rounded-xl mb-4">
-                <p class="text-[10px] text-white/80 font-medium">Re-distribute 2% of Vault to Active Creators?</p>
-                <div class="flex gap-2 mt-4">
-                    <button onclick="commitVote('yes')" class="flex-1 py-2 bg-green-500/20 text-green-500 text-[9px] font-bold uppercase rounded border border-green-500/30">Yes</button>
-                    <button onclick="commitVote('no')" class="flex-1 py-2 bg-red-500/20 text-red-500 text-[9px] font-bold uppercase rounded border border-red-500/30">No</button>
-                </div>
-            </div>
-            <p class="text-[8px] text-center opacity-30 uppercase">Voting ends in: 14h 22m</p>
-        </div>
-    </aside>
-
-    <section id="mainFeedSection" class="lg:col-span-12">
-      <div id="feedContainer" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-8"></div>
-    </section>
-
-    <section class="lg:col-span-12 mt-8">
-      <div class="glass p-8 border-cyan-500/20 relative overflow-hidden">
-        <div class="scan-line"></div>
-        <div class="flex items-center justify-between mb-6">
-          <div class="flex items-center gap-3">
-            <div class="w-2 h-2 bg-cyan-500 rounded-full animate-ping"></div>
-            <h3 class="text-[10px] font-black uppercase tracking-[0.4em] text-cyan-400">Live Neural Ledger</h3>
-          </div>
-          <div class="flex gap-4">
-              <span id="latencyDisplay" class="text-[8px] font-mono opacity-40 uppercase">Latency: 22ms</span>
-              <span id="blockHeight" class="text-[8px] font-mono opacity-40 uppercase">Block: #882,109</span>
-          </div>
-        </div>
-        <div id="neuralPulse" class="space-y-3 h-32 overflow-hidden opacity-60 font-mono text-[10px] no-scrollbar"></div>
-      </div>
-    </section>
-  </main>
-</div>
-
-<div id="handshakeModal" class="fixed inset-0 bg-black/98 backdrop-blur-2xl hidden z-[110] flex items-center justify-center p-4">
-    <div class="glass p-8 w-full max-w-2xl border-yellow-500/30">
-        <div class="flex justify-between items-center mb-6">
-            <h3 id="hsModalTitle" class="text-2xl font-bold text-yellow-500 uppercase">Collaboration Handshake</h3>
-            <button onclick="closeHandshake()" class="text-slate-500 hover:text-white">✕</button>
-        </div>
-        
-        <div id="hsListMode" class="hidden space-y-4 max-h-96 overflow-y-auto pr-2 no-scrollbar"></div>
-
-        <div id="hsNegotiateMode" class="space-y-6">
-            <p class="text-[11px] text-slate-400 uppercase tracking-widest">Negotiating Licensing agreement for: <span id="collabTitle" class="text-white">...</span></p>
-            <div class="grid grid-cols-2 gap-4">
-                <div class="p-4 bg-white/5 rounded-xl border border-white/10">
-                    <label class="text-[9px] uppercase text-cyan-400 block mb-2">Revenue Split %</label>
-                    <input type="number" id="splitInput" class="bg-transparent w-full text-2xl font-bold outline-none" value="50">
-                </div>
-                <div class="p-4 bg-white/5 rounded-xl border border-white/10">
-                    <label class="text-[9px] uppercase text-cyan-400 block mb-2">Agreement Hash</label>
-                    <div id="agreementHash" class="text-[9px] font-mono break-all opacity-40">WAITING_FOR_SIGNATURE</div>
-                </div>
-            </div>
-            
-            <div id="signatureArea">
-                <label class="text-[10px] uppercase text-slate-500 block mb-2">Sign here to Hash Agreement</label>
-                <canvas id="sig-canvas" width="600" height="200" class="w-full rounded-xl"></canvas>
-            </div>
-            
-            <div id="signatureReviewArea" class="hidden">
-                 <label class="text-[10px] uppercase text-yellow-500 block mb-2">Neural Signature Received:</label>
-                 <img id="sig-review-img" src="" alt="Neural Signature">
-            </div>
-
-            <div id="hsActionBtns" class="flex flex-col gap-3">
-                <button id="mainHsBtn" onclick="finalizeHandshake()" class="w-full py-5 bg-yellow-500 text-black font-black uppercase tracking-widest rounded-xl btn-glow">Commit Neural Signature</button>
-                <div id="creatorResponseBtns" class="hidden flex gap-3">
-                    <button onclick="respondToHandshake('accept')" class="flex-1 py-4 bg-green-600 text-white font-bold uppercase rounded-xl hover:bg-green-500 transition-all">Accept</button>
-                    <button onclick="respondToHandshake('negotiate')" class="flex-1 py-4 bg-white/10 text-white font-bold uppercase rounded-xl border border-white/10">Counter</button>
-                    <button onclick="respondToHandshake('reject')" class="flex-1 py-4 bg-red-900/40 text-red-500 font-bold uppercase rounded-xl">Reject</button>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div id="withdrawalModal" class="fixed inset-0 bg-black/98 backdrop-blur-2xl hidden z-[120] flex items-center justify-center p-4">
-  <div class="glass p-8 w-full max-w-md border-yellow-500/30">
-      <div class="flex justify-between items-center mb-6">
-          <h3 class="text-2xl font-bold text-yellow-500 uppercase tracking-tighter">Off-Ramp Vault</h3>
-          <button onclick="document.getElementById('withdrawalModal').classList.add('hidden')" class="text-slate-500 hover:text-white">✕</button>
-      </div>
-      <div class="space-y-4">
-          <div class="bg-white/5 p-4 rounded-xl border border-white/10">
-              <label class="text-[9px] uppercase text-cyan-400 block mb-1">Available for Payout</label>
-              <div id="withdrawableAmount" class="text-2xl font-bold text-white tracking-widest">KES 0.00</div>
-          </div>
-          <select id="payoutMethod" class="input-field w-full p-4 rounded-xl text-sm font-bold uppercase" onchange="togglePayoutFields()">
-              <option value="mobile_money">Mobile Money (MPESA)</option>
-              <option value="bank_transfer">Neural Bank Node</option>
-          </select>
-          <div id="mobileMoneyFields" class="space-y-4">
-              <input id="payoutPhone" type="tel" class="input-field w-full p-4 rounded-xl" placeholder="2547XXXXXXXX"/>
-          </div>
-          <div id="bankFields" class="hidden space-y-4">
-              <input id="accountNumber" class="input-field w-full p-4 rounded-xl" placeholder="Account Number"/>
-              <select id="bankCode" class="input-field w-full p-4 rounded-xl">
-                  <option value="044">KCB Bank</option>
-                  <option value="063">Equity Bank</option>
-                  <option value="011">Co-op Bank</option>
-              </select>
-          </div>
-          <button onclick="finalizeWithdrawal()" id="withdrawSubmitBtn" class="w-full py-5 bg-yellow-500 text-black font-black uppercase tracking-widest rounded-xl btn-glow mt-4">Initiate Payout</button>
-          <p class="text-[8px] text-center opacity-40 uppercase tracking-widest mt-4">Powered by Flutterwave Neural Rails</p>
-      </div>
-  </div>
-</div>
-<button id="fabButton" onclick="document.getElementById('fabModal').classList.remove('hidden')" class="fixed bottom-8 right-8 w-16 h-16 rounded-full bg-yellow-500 text-black text-3xl font-bold shadow-2xl flex items-center justify-center z-50 btn-glow hidden">+</button>
-
-<div id="fabModal" class="fixed inset-0 bg-black/95 backdrop-blur-xl hidden z-50 flex items-center justify-center p-4">
-  <div class="glass p-10 w-full max-w-xl border-white/10">
-    <div class="flex justify-between items-center mb-6">
-      <h3 class="text-2xl font-bold text-yellow-400 uppercase tracking-tighter">Mint Global IP</h3>
-      <button onclick="closeFab()" class="text-slate-500 hover:text-white">✕</button>
-    </div>
-    
-    <div class="flex gap-2 mb-6 p-1 bg-white/5 rounded-xl">
-      <button onclick="setMintType('file')" id="typeFile" class="flex-1 py-2 text-[10px] uppercase font-bold rounded-lg bg-yellow-500 text-black transition-all">File Upload</button>
-      <button onclick="setMintType('stream')" id="typeStream" class="flex-1 py-2 text-[10px] uppercase font-bold rounded-lg text-slate-400 transition-all">Livestream URL</button>
-    </div>
-
-    <div class="space-y-5">
-      <input id="fabTitle" class="input-field w-full p-4 rounded-xl" placeholder="IP Asset Title"/>
-      <div class="grid grid-cols-2 gap-4">
-          <input id="fabPrice" type="number" class="input-field w-full p-4 rounded-xl" placeholder="Price (KES)"/>
-          <input id="fabLimit" type="number" class="input-field w-full p-4 rounded-xl" placeholder="Supply (0=∞)"/>
-      </div>
-
-      <div id="fileInputContainer" class="p-6 border-2 border-dashed border-white/10 rounded-2xl bg-white/5 text-center">
-        <input id="fabFile" type="file" class="hidden" onchange="updateFileName()" />
-        <label for="fabFile" id="fileLabel" class="cursor-pointer text-sm text-slate-400 block font-medium">Select Neural Data (Max 100MB)</label>
-      </div>
-
-      <div id="streamInputContainer" class="hidden">
-        <input id="fabStreamUrl" class="input-field w-full p-4 rounded-xl border-cyan-500/30" placeholder="https://youtube.com/live/..." />
-        <p class="text-[8px] text-cyan-500/50 uppercase tracking-widest mt-2 px-1">Enter HLS, RTMP, or Social Live URL</p>
-      </div>
-
-      <button id="mintBtn" onclick="publishContent()" class="relative btn-glow w-full py-5 rounded-xl bg-cyan-500 text-black font-extrabold uppercase text-sm tracking-[0.2em] flex items-center justify-center gap-4 overflow-hidden">
-        <span id="btnText">STAMP & MONETIZE</span>
-        <svg id="progressSvg" class="hidden" width="30" height="30">
-          <circle class="text-black/20" stroke-width="4" stroke="currentColor" fill="transparent" r="12" cx="15" cy="15"/>
-          <circle id="progressCircle" class="text-black progress-ring" stroke-width="4" stroke-dasharray="75.39" stroke-dashoffset="75.39" stroke-linecap="round" stroke="currentColor" fill="transparent" r="12" cx="15" cy="15"/>
-        </svg>
-      </button>
-      <p id="uploadStatus" class="text-[10px] uppercase text-center text-cyan-500 tracking-widest opacity-0 font-bold transition-opacity">AI Originality Check: Neural Matching...</p>
-    </div>
-  </div>
-</div>
-
-<div id="certModal" class="fixed inset-0 bg-black/95 backdrop-blur-2xl hidden z-[60] flex items-center justify-center p-4">
-  <div id="certContent" class="glass p-8 w-full max-w-lg border-cyan-500/30 stamped-bg border-2 relative"></div>
-</div>
-
-<div id="watermark" class="fixed pointer-events-none opacity-[0.03] text-[8px] font-mono z-[1000] rotate-[-45deg] whitespace-nowrap hidden">
-    INFLUENSA_IP_SECURED_BY_AFROFUTURIST_PROTOCOL_NO_PIRACY_ALLOWED
-</div>
-
-<script>
-// --- FRONTEND SHIELD: PROTECT SOURCE & UI ---
-document.addEventListener('contextmenu', event => event.preventDefault());
-
-document.onkeydown = function(e) {
-    if(e.keyCode == 123 || (e.ctrlKey && e.shiftKey && (e.keyCode == 73 || e.keyCode == 74)) || (e.ctrlKey && e.keyCode == 85)) {
-        return false;
-    }
-    if(e.ctrlKey && (e.keyCode == 83 || e.keyCode == 80)) {
-        return false;
-    }
+    console.log("\n" + subtext);
+    console.log("------------------------------------------");
 };
 
-const API_URL = window.location.origin + '/api';
-let currentUser = null;
-let activeMintType = 'file'; 
-let searchTimeout;
-let allPosts = [];
-let currentNegotiation = null; 
-let pendingOffers = [];
-let analyticsVisible = false;
-let neuralMeshActive = true;
-let handshakeStatusCache = {}; 
+const AFRO_HARD_CAP = 51000000000; 
+const PROTOCOL_FEE = 0.0789;      
+const MINTING_REWARD_RATE = 0.10; 
+const PLATFORM_RESERVE_SHARE = 0.20; 
 
-const SystemLog = (msg, type = 'info') => {
-    const timestamp = new Date().toLocaleTimeString();
-    console.log(`[${timestamp}] [${type.toUpperCase()}] iNFLUENSA: ${msg}`);
-};
+const neuralSentryLog = new Map();
+const MAX_REQUESTS_PER_WINDOW = 500; 
+const WINDOW_MS = 60000; 
 
-window.onload = () => {
-    const text = "iNFLUENSA";
-    const container = document.getElementById('launchText');
-    text.split('').forEach((char, i) => {
-        const span = document.createElement('span');
-        span.innerText = char;
-        span.className = 'launch-letter';
-        container.appendChild(span);
-        setTimeout(() => span.classList.add('active'), i * 150);
-    });
-    setTimeout(() => { document.getElementById('launchSub').style.opacity = '1'; }, text.length * 150 + 500);
-    setTimeout(() => {
-        document.getElementById('cinematicLaunch').style.display = 'none';
-        document.body.classList.remove('overflow-hidden');
-        const savedPhone = localStorage.getItem('iNFLUENSA_NODE');
-        if (savedPhone) {
-            document.getElementById("phoneInput").value = savedPhone;
-            initializeGrid();
-        } else {
-            document.getElementById('initOverlay').classList.remove('hidden');
-        }
-    }, text.length * 150 + 3000);
-    
-    const wm = document.getElementById('watermark');
-    wm.innerText = (wm.innerText + " ").repeat(200);
-};
 
-async function initializeGrid() {
-  let phone = document.getElementById("phoneInput").value.trim();
-  if(phone.startsWith('0')) phone = '254' + phone.substring(1);
-  if(!phone || phone.length < 12) return alert("Identity Error: Use 2547XXXXXXXX");
-  
-  localStorage.setItem('iNFLUENSA_NODE', phone);
-  currentUser = { identity: phone, lang: document.getElementById('langSelect').value };
 
-  try {
-    const res = await fetch(`${API_URL}/nodes/connect`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ identity: phone })
-    });
-    const data = await res.json();
-    document.getElementById("protocolUsers").innerText = `${data.nodeCount || '1'} NODES ACTIVE`;
-  } catch(e) { 
-      document.getElementById("protocolUsers").innerText = "OFFLINE MESH ACTIVE";
-  }
+const gcs = new Storage();
 
-  document.getElementById("initOverlay").style.display = "none";
-  document.getElementById("fabButton").classList.remove("hidden");
-  document.getElementById("watermark").classList.remove("hidden");
-  
-  updateWalletUI();
-  fetchPosts();
-  fetchGlobalStats();
-  startGlobalPulse();
-  startNotificationListener(); 
-  simulateLatency();
-  
-  setInterval(updateWalletUI, 5000);
-  setInterval(fetchGlobalStats, 10000); 
-  setInterval(simulateLatency, 3000);
-  showToast("Neural Mesh Connected Successfully");
+const bucket = gcs.bucket(process.env.GCS_BUCKET);
+
+const uploadDir = '/app/uploads/tmp';
+
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-function toggleAnalytics() {
-    analyticsVisible = !analyticsVisible;
-    const sidebar = document.getElementById('analyticsSidebar');
-    const mainFeed = document.getElementById('mainFeedSection');
-    if(analyticsVisible) {
-        sidebar.classList.remove('hidden');
-        mainFeed.classList.replace('lg:col-span-12', 'lg:col-span-9');
+const multerStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, uploadDir);
+    },
+
+    filename: (req, file, cb) => {
+        cb(null, Date.now() + '-' + file.originalname);
+    }
+});
+
+const upload = multer({
+    storage: multerStorage,
+    limits: {
+        fileSize: 100 * 1024 * 1024
+    }
+});
+
+app.use(cors());
+app.use(express.json({ limit: '110mb' })); 
+app.use(express.urlencoded({ limit: '110mb', extended: true }));
+
+
+// --- NEURAL SENTRY MIDDLEWARE ---
+app.use((req, res, next) => {
+    if (req.path === '/api/health') return next();
+    const ip = req.ip;
+    const now = Date.now();
+    if (!neuralSentryLog.has(ip)) {
+        neuralSentryLog.set(ip, { count: 1, startTime: now });
     } else {
-        sidebar.classList.add('hidden');
-        mainFeed.classList.replace('lg:col-span-9', 'lg:col-span-12');
-    }
-}
-
-function simulateLatency() {
-    const ms = Math.floor(Math.random() * 45) + 12;
-    document.getElementById('latencyDisplay').innerText = `Latency: ${ms}ms`;
-    const height = 882109 + Math.floor(Date.now() / 1000000);
-    document.getElementById('blockHeight').innerText = `Block: #${height}`;
-}
-
-let canvas, ctx, drawing = false;
-
-function initSignature() {
-    canvas = document.getElementById('sig-canvas');
-    if (!canvas) return;
-    ctx = canvas.getContext('2d');
-    ctx.strokeStyle = '#facc15';
-    ctx.lineWidth = 3;
-    const getPos = (e) => {
-        const rect = canvas.getBoundingClientRect();
-        return { x: (e.clientX || (e.touches ? e.touches[0].clientX : 0)) - rect.left, 
-                 y: (e.clientY || (e.touches ? e.touches[0].clientY : 0)) - rect.top };
-    };
-    const start = (e) => { drawing = true; const p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
-    const draw = (e) => { if(!drawing) return; const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); updateAgreementHash(); };
-    const stop = () => drawing = false;
-    canvas.addEventListener('mousedown', start); canvas.addEventListener('mousemove', draw); window.addEventListener('mouseup', stop);
-    canvas.addEventListener('touchstart', start); canvas.addEventListener('touchmove', (e)=> { e.preventDefault(); draw(e); }); window.addEventListener('touchend', stop);
-}
-
-function updateAgreementHash() {
-    const sigData = canvas.toDataURL();
-    const hash = btoa(sigData).substring(50, 66);
-    document.getElementById('agreementHash').innerText = `ID_SHA256: ${hash}`;
-}
-
-function openHandshake(postId, title) {
-    currentNegotiation = { postId, title, isCreatorView: false };
-    document.getElementById('hsModalTitle').innerText = "Initiate Handshake";
-    document.getElementById('collabTitle').innerText = title;
-    document.getElementById('hsListMode').classList.add('hidden');
-    document.getElementById('hsNegotiateMode').classList.remove('hidden');
-    document.getElementById('mainHsBtn').classList.remove('hidden');
-    document.getElementById('creatorResponseBtns').classList.add('hidden');
-    document.getElementById('signatureArea').classList.remove('hidden');
-    document.getElementById('signatureReviewArea').classList.add('hidden');
-    document.getElementById('handshakeModal').classList.remove('hidden');
-    
-    setTimeout(() => {
-        initSignature();
-        if(ctx) ctx.clearRect(0,0, canvas.width, canvas.height);
-    }, 100);
-}
-
-async function finalizeHandshake() {
-    const split = document.getElementById('splitInput').value;
-    const signature = canvas.toDataURL();
-    const contractHash = document.getElementById('agreementHash').innerText;
-
-    try {
-        const res = await fetch(`${API_URL}/handshake/offer`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                postId: currentNegotiation.postId, 
-                sender: currentUser.identity, 
-                split, signature, contractHash 
-            })
-        });
-        if(res.ok) { showToast("Neural Offer Dispatched."); closeHandshake(); }
-    } catch(e) { showToast("Mesh Failure."); }
-}
-
-async function viewActiveHandshakes() {
-    try {
-        const res = await fetch(`${API_URL}/handshake/pending/${currentUser.identity}`);
-        const data = await res.json();
-        pendingOffers = data || [];
-        
-        document.getElementById('hsModalTitle').innerText = "Active Contracts";
-        document.getElementById('hsListMode').classList.remove('hidden');
-        document.getElementById('hsNegotiateMode').classList.add('hidden');
-        document.getElementById('handshakeModal').classList.remove('hidden');
-        
-        const list = document.getElementById('hsListMode');
-        if (pendingOffers.length === 0) {
-            list.innerHTML = `<p class="text-center opacity-40 py-10">NO PENDING AGREEMENTS</p>`;
-        } else {
-            list.innerHTML = pendingOffers.map(h => `
-                <div onclick="openNegotiationLoop('${h._id}')" class="p-5 glass border-white/10 hover:border-yellow-500/50 cursor-pointer flex justify-between items-center group">
-                    <div>
-                        <div class="text-[10px] text-cyan-400 font-bold uppercase">OFFER_FROM: ${h.sender}</div>
-                        <div class="text-xl font-bold">${h.split}% REVENUE SPLIT</div>
-                        <div class="text-[8px] uppercase tracking-widest text-slate-500">Status: ${h.status || 'PENDING'}</div>
-                    </div>
-                    <div class="text-yellow-500 group-hover:translate-x-1 transition-all">REVIEW →</div>
-                </div>
-            `).join('');
-        }
-    } catch(e) { showToast("Fetch Error"); }
-}
-
-async function openNegotiationLoop(handshakeId) {
-    const hs = pendingOffers.find(x => x._id === handshakeId);
-    if(!hs) return;
-    currentNegotiation = hs;
-    document.getElementById('hsModalTitle').innerText = "Process Contract";
-    document.getElementById('splitInput').value = hs.split;
-    document.getElementById('agreementHash').innerText = hs.contractHash;
-    document.getElementById('sig-review-img').src = hs.signature;
-    document.getElementById('hsListMode').classList.add('hidden');
-    document.getElementById('hsNegotiateMode').classList.remove('hidden');
-    document.getElementById('mainHsBtn').classList.add('hidden');
-    document.getElementById('creatorResponseBtns').classList.remove('hidden');
-    document.getElementById('signatureArea').classList.add('hidden'); 
-    document.getElementById('signatureReviewArea').classList.remove('hidden');
-}
-
-async function respondToHandshake(action) {
-    const endpoint = action === 'accept' ? 'accept' : (action === 'negotiate' ? 'counter' : 'reject');
-    const payload = action === 'negotiate' ? { split: document.getElementById('splitInput').value } : {};
-    
-    try {
-        const res = await fetch(`${API_URL}/handshake/${endpoint}/${currentNegotiation._id}`, { 
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        if(res.ok) { 
-            showToast(`Contract ${action}ed.`); 
-            closeHandshake(); 
-            fetchPosts(); 
-        }
-    } catch(e) { showToast("Sync failure."); }
-}
-
-async function fetchPosts() {
-    try {
-        const res = await fetch(`${API_URL}/posts`);
-        allPosts = await res.json();
-        render(allPosts);
-    } catch (e) { SystemLog("Feed Sync Error", "error"); }
-}
-
-function render(posts) {
-  const container = document.getElementById("feedContainer");
-  if (!posts || posts.length === 0) {
-    container.innerHTML = `<div class="col-span-full py-20 text-center opacity-40 uppercase tracking-[0.4em] text-xs">Zero Matches in Neural Mesh</div>`;
-    return;
-  }
-  container.innerHTML = posts.map(p => {
-    const isUnlocked = p.unlocked_by?.includes(currentUser.identity) || p.owner === currentUser.identity;
-    const isLicensed = p.licensed_to?.includes(currentUser.identity);
-    const isOwner = p.owner === currentUser.identity;
-    const isAudio = p.mime?.includes('audio');
-
-    return `
-      <div id="post-${p._id}" class="glass overflow-hidden ${isUnlocked || isLicensed ? 'border-cyan-500/40' : 'border-white/5'} flex flex-col group transition-all h-full relative">
-        <div class="h-64 bg-black relative flex items-center justify-center overflow-hidden">
-          ${(isUnlocked || isLicensed) ? renderFullMedia(p) : renderTeaserMedia(p, isAudio)}
-          <div class="anti-piracy-overlay absolute inset-0 opacity-20"></div>
-          ${p.scarcity_limit > 0 ? `<div class="absolute top-4 right-4 z-20 px-3 py-1 bg-red-500 text-white text-[8px] font-black uppercase rounded-full">Ltd: ${p.scarcity_limit - (p.unlocked_by?.length || 0)} Left</div>` : ''}
-          <div class="absolute top-4 left-4 flex gap-2 z-20">
-             <button onclick="openHandshake('${p._id}', '${p.title}')" class="w-10 h-10 rounded-full glass border border-yellow-500/30 flex items-center justify-center handshake-shake text-xl"><span>🤝</span></button>
-             <button onclick="shareAndDownload('${p._id}', ${p.price})" class="w-10 h-10 rounded-full glass border border-cyan-500/30 flex items-center justify-center text-xl">🔗</button>
-          </div>
-          ${!(isUnlocked || isLicensed) ? `
-            <div class="absolute inset-0 bg-gradient-to-t from-[#0a0e1f] via-transparent flex flex-col items-center justify-end p-6">
-                <button id="unlock-btn-${p._id}" onclick="unlockIP('${p._id}')" class="bg-yellow-500 text-black w-full py-3 rounded-xl font-black text-[11px] uppercase btn-glow mb-2">Unlock KES ${p.price}</button>
-            </div>` : `
-            ${isOwner ? `<div class="absolute bottom-2 right-2"><button onclick="burnIP('${p._id}')" class="bg-red-500/20 text-red-500 border border-red-500/50 px-4 py-2 rounded-lg font-bold text-[9px] uppercase hover:bg-red-500 hover:text-white transition-all">Burn IP</button></div>` : ''}
-          `}
-        </div>
-        <div class="p-6">
-          <div class="flex justify-between items-start">
-            <h4 class="text-xl font-bold lowercase truncate w-2/3">${p.title}</h4>
-            <button onclick="viewCID('${p._id}')" class="text-[8px] font-mono text-cyan-500 bg-cyan-500/10 px-2 py-1 rounded">CID_AUDIT</button>
-          </div>
-          <div class="flex justify-between items-center mt-4">
-            <span class="text-[9px] text-slate-500 uppercase">Node: ...${p.owner.slice(-4)}</span>
-            <span class="text-yellow-500 font-bold uppercase text-[12px]">KES ${p.price}</span>
-          </div>
-        </div>
-      </div>`;
-  }).join('');
-}
-
-function renderTeaserMedia(p, isAudio) {
-    if (isAudio) return `<div class="flex items-end gap-1 h-12"><div class="audio-bar"></div><div class="audio-bar" style="animation-delay:0.2s"></div><div class="audio-bar" style="animation-delay:0.4s"></div></div>`;
-    return `<div class="stamped-bg w-full h-full opacity-10 flex items-center justify-center text-[10px] font-bold">ENCRYPTED_DATA</div>`;
-}
-
-/* MODIFIED: Secure Watermarked Rendering Logic */
-function renderFullMedia(p) {
-    const secureUrl = `${API_URL}/media/${p._id}?phone=${currentUser.identity}`;
-    
-    if(p.is_stream) {
-        return `<iframe src="${p.stream_url}" class="w-full h-full" allow="autoplay; encrypted-media"></iframe>`;
-    }
-    
-    if(p.mime?.includes('video')) {
-        return `<video src="${secureUrl}" controls controlsList="nodownload" class="w-full h-full object-cover"></video>`;
-    }
-    
-    if(p.mime?.includes('audio')) {
-        return `
-        <div class="flex flex-col items-center justify-center h-full w-full bg-slate-900/50 p-4">
-            <div class="flex gap-1 mb-4">
-                <div class="audio-bar"></div><div class="audio-bar"></div><div class="audio-bar"></div>
-            </div>
-            <audio src="${secureUrl}" controls controlsList="nodownload" class="w-full"></audio>
-        </div>`;
-    }
-
-    return `<img src="${secureUrl}" class="w-full h-full object-cover">`;
-}
-
-/* MAINTAINED: Master Polling & STK Push Logic */
-async function unlockIP(postId, type = 'unlock') {
-  const btn = document.getElementById(`unlock-btn-${postId}`);
-  const originalText = btn ? btn.innerText : "Unlock";
-  
-  if(btn) { 
-    btn.innerText = "CHECK PHONE PIN..."; 
-    btn.classList.add('processing-payout');
-    btn.disabled = true;
-  }
-
-  try {
-    const res = await fetch(`${API_URL}/posts/${postId}/unlock`, {
-      method: 'POST', 
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone: currentUser.identity, type: type })
-    });
-    
-    const data = await res.json();
-    
-    if (data.checkoutID) {
-      showToast("STK Push Sent. Enter PIN to unlock.");
-      
-      // Fix: Establish a robust polling interval to check transaction status
-      let attempts = 0;
-      const poll = setInterval(async () => {
-        attempts++;
-        try {
-          const sRes = await fetch(`${API_URL}/stk-status/${data.checkoutID}`);
-          const s = await sRes.json();
-          
-          // Logic: Only refresh and unlock when the backend confirms 'completed'
-          if (s.status === 'completed' || s.resultCode === '0') {
-            clearInterval(poll);
-            showToast("🔓 Asset Unlocked Successfully!");
-            await fetchPosts(); // Refresh feed to trigger renderFullMedia(p)
-          } else if (s.status === 'failed' || s.status === 'cancelled') {
-            clearInterval(poll);
-            showToast("❌ Payment Failed.");
-            resetUnlockBtn(btn, originalText);
-          }
-        } catch (e) { 
-            console.error("Polling Sync Error", e); 
-        }
-
-        // Safety: Timeout after 60 seconds (20 attempts * 3s)
-        if (attempts > 20) {
-            clearInterval(poll);
-            showToast("⌛ Verification Timeout.");
-            resetUnlockBtn(btn, "RETRY UNLOCK");
-        }
-      }, 3000);
-      
-    } else {
-      showToast("Gateway Error: " + (data.error || "Check Connection"));
-      resetUnlockBtn(btn, originalText);
-    }
-  } catch (e) { 
-    showToast("Network Sync Error"); 
-    resetUnlockBtn(btn, originalText);
-  }
-}
-
-// Helper to maintain UI state consistency
-function resetUnlockBtn(btn, text) {
-    if(!btn) return;
-    btn.classList.remove('processing-payout');
-    btn.innerText = text;
-    btn.disabled = false;
-}
-
-async function publishContent() {
-  const btn = document.getElementById("mintBtn");
-  const progressCircle = document.getElementById("progressCircle");
-  const uploadStatus = document.getElementById("uploadStatus");
-  const title = document.getElementById("fabTitle").value;
-  const price = document.getElementById("fabPrice").value;
-  const scarcity_limit = document.getElementById("fabLimit").value;
-  
-  if(!title || !price) return alert("Title and Price are required.");
-  btn.disabled = true;
-  uploadStatus.style.opacity = "1";
-  uploadStatus.innerText = "Neural Verification in progress...";
-
-  if (activeMintType === 'file') {
-      const file = document.getElementById("fabFile").files[0];
-      if(!file) { resetMintUI(); return alert("No file selected."); }
-      const formData = new FormData();
-      formData.append("title", title);
-      formData.append("price", price);
-      formData.append("scarcity_limit", scarcity_limit);
-      formData.append("owner", currentUser.identity);
-      formData.append("file", file);
-
-      document.getElementById("progressSvg").classList.remove("hidden");
-      const xhr = new XMLHttpRequest();
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) {
-          const p = (e.loaded / e.total) * 100;
-          progressCircle.style.strokeDashoffset = 75.39 - (p / 100 * 75.39);
-        }
-      };
-      xhr.onload = () => { 
-          if(xhr.status === 201) { showToast(`Asset Stamped.`); fetchPosts(); closeFab(); }
-          else { alert("File Sync Failed."); resetMintUI(); }
-      };
-      xhr.open("POST", `${API_URL}/posts`);
-      xhr.send(formData);
-  } else {
-      const stream_url = document.getElementById("fabStreamUrl").value;
-      if(!stream_url) { resetMintUI(); return alert("Stream URL Required."); }
-      try {
-          const res = await fetch(`${API_URL}/posts/stream`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ title, price, scarcity_limit, owner: currentUser.identity, stream_url })
-          });
-          if(res.ok) { showToast(`Stream Registered.`); fetchPosts(); closeFab(); }
-          else { alert("Stream Sync Failed."); resetMintUI(); }
-      } catch(e) { alert("Mesh Network Error."); resetMintUI(); }
-  }
-}
-
-async function burnIP(postId) {
-    if(!confirm("Burn this CID permanently?")) return;
-    try {
-        const res = await fetch(`${API_URL}/posts/${postId}`, { method: 'DELETE' });
-        if(res.ok) { 
-            document.getElementById(`post-${postId}`).classList.add('burning'); 
-            setTimeout(fetchPosts, 800); 
-        }
-    } catch(e) { showToast("Burn failed."); }
-}
-
-function commitVote(choice) {
-    showToast(`Neural Signature Committed: Vote [${choice.toUpperCase()}] Hashed.`);
-}
-
-async function updateWalletUI() {
-    if(!currentUser) return;
-    try {
-        const res = await fetch(`${API_URL}/nodes/connect`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ identity: currentUser.identity })
-        });
-        const data = await res.json();
-        document.getElementById("afroCoinsDisplay").innerText = `${data.user.afroCoins.toFixed(2)} AFRO`;
-        document.getElementById("earningsDisplay").innerText = `KES ${(data.user.earnings || 0).toFixed(2)}`;
-        document.getElementById("nodeID").innerText = `NODE_${currentUser.identity.slice(-4)}`;
-        const withDisplay = document.getElementById("withdrawableAmount");
-        if(withDisplay) withDisplay.innerText = `KES ${(data.user.earnings || 0).toFixed(2)}`;
-    } catch (e) {}
-}
-
-async function fetchGlobalStats() {
-    try {
-        const data = await (await fetch(`${API_URL}/stats`)).json();
-        document.getElementById("taxVaultDisplay").innerText = `KES ${data.taxVault}`;
-        document.getElementById("protocolUsers").innerText = `${data.userCount} NODES ACTIVE`;
-    } catch (e) {}
-}
-
-function startGlobalPulse() {
-  const container = document.getElementById('neuralPulse');
-  const items = ["> NEW_IP_STAMPED", "> ASSET_UNLOCKED", "> VAULT_REVENUE_SYNC", "> HANDSHAKE_COMMIT"];
-  setInterval(() => {
-    const el = document.createElement('div');
-    el.className = "flex justify-between opacity-50 text-[9px] animate-pulse";
-    el.innerHTML = `<span>${items[Math.floor(Math.random()*items.length)]}</span><span>${new Date().toLocaleTimeString()}</span>`;
-    container.prepend(el);
-    if(container.children.length > 8) container.lastChild.remove();
-  }, 4000);
-}
-
-function startNotificationListener() {
-    setInterval(async () => {
-        if(!currentUser) return;
-        try {
-            const data = await (await fetch(`${API_URL}/handshake/pulse/${currentUser.identity}`)).json();
-            const dot = document.getElementById('handshakeDot');
-            if (data.active) dot.classList.remove('hidden');
-            else dot.classList.add('hidden');
-            checkOutgoingHandshakes();
-        } catch(e) {}
-    }, 5000); 
-}
-
-async function checkOutgoingHandshakes() {
-    try {
-        const res = await fetch(`${API_URL}/handshake/outgoing/${currentUser.identity}`);
-        const handshakes = await res.json();
-        handshakes.forEach(h => {
-            const lastStatus = handshakeStatusCache[h._id];
-            if (lastStatus !== h.status) {
-                if (h.status === 'accepted') showToast(`🤝 SUCCESS: Creator accepted your split!`);
-                else if (h.status === 'countered') showToast(`⚖️ COUNTER: Creator suggests ${h.split}% split.`);
-                else if (h.status === 'rejected') showToast(`🚫 REJECTED: Handshake declined.`);
-                handshakeStatusCache[h._id] = h.status;
+        const entry = neuralSentryLog.get(ip);
+        if (now - entry.startTime < WINDOW_MS) {
+            entry.count++;
+            if (entry.count > MAX_REQUESTS_PER_WINDOW) {
+                console.log(`⚠️ NEURAL SENTRY: Rate Limit Triggered for ${ip}`);
+                return res.status(429).json({ error: "NEURAL_SENTRY_BLOCK", message: "Excessive Nodal Traffic Detected" });
             }
-        });
-    } catch(e) {}
-}
-
-function showToast(msg) {
-    const c = document.getElementById('toast-container');
-    const t = document.createElement('div');
-    t.className = 'toast'; t.innerText = msg;
-    c.appendChild(t); setTimeout(() => t.remove(), 4000);
-}
-
-function debounceSearch(val) {
-    clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(async () => {
-        if (!val) return fetchPosts();
-        const res = await fetch(`${API_URL}/search?q=${encodeURIComponent(val)}`);
-        render(await res.json());
-    }, 350); 
-}
-
-function filterBy(type) {
-    if(type === 'all') render(allPosts);
-    else render(allPosts.filter(p => p.mime?.includes(type)));
-}
-
-function closeHandshake() { document.getElementById('handshakeModal').classList.add('hidden'); }
-function closeFab() { document.getElementById("fabModal").classList.add("hidden"); resetMintUI(); }
-function closeCert() { document.getElementById("certModal").classList.add("hidden"); }
-
-function resetMintUI() {
-    document.getElementById("mintBtn").disabled = false;
-    document.getElementById("progressSvg").classList.add("hidden");
-    document.getElementById("btnText").innerText = "STAMP & MONETIZE";
-    document.getElementById("uploadStatus").style.opacity = "0";
-}
-
-function updateFileName() { 
-    const f = document.getElementById("fabFile").files[0];
-    document.getElementById("fileLabel").innerText = f ? f.name : "Select Neural Data"; 
-}
-
-function setMintType(t) {
-    activeMintType = t;
-    const btnFile = document.getElementById('typeFile');
-    const btnStream = document.getElementById('typeStream');
-    if (t === 'file') {
-        btnFile.classList.add('bg-yellow-500', 'text-black');
-        btnFile.classList.remove('text-slate-400');
-        btnStream.classList.remove('bg-yellow-500', 'text-black');
-        btnStream.classList.add('text-slate-400');
-        document.getElementById('fileInputContainer').classList.remove('hidden');
-        document.getElementById('streamInputContainer').classList.add('hidden');
-    } else {
-        btnStream.classList.add('bg-yellow-500', 'text-black');
-        btnStream.classList.remove('text-slate-400');
-        btnFile.classList.remove('bg-yellow-500', 'text-black');
-        btnFile.classList.add('text-slate-400');
-        document.getElementById('fileInputContainer').classList.add('hidden');
-        document.getElementById('streamInputContainer').classList.remove('hidden');
+        } else {
+            neuralSentryLog.set(ip, { count: 1, startTime: now });
+        }
     }
-}
+    next();
+});
 
-function viewCID(postId) {
-    const p = allPosts.find(x => x._id === postId);
-    if(!p) return;
-    const now = new Date();
-    const dateStr = now.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).toUpperCase();
-    const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    const serialNo = "INF-" + Math.random().toString(36).substr(2, 9).toUpperCase();
+app.use(express.static(__dirname));
 
-    document.getElementById("certContent").innerHTML = `
-        <div class="absolute top-0 left-0 w-full h-1.5 bg-yellow-500"></div>
-        <div class="absolute top-4 left-6 text-[8px] font-mono text-white/30 tracking-widest uppercase">Serial No: ${serialNo}</div>
-        <div class="text-center mt-6 mb-10">
-            <div class="text-[9px] text-cyan-400 font-black uppercase tracking-[0.5em] mb-4">iNFLUENSA Global IP Registry</div>
-            <h2 class="text-3xl font-bold text-white uppercase tracking-tighter leading-none mb-1">IP CERTIFICATE OF TITLE</h2>
-            <div class="h-px w-32 bg-yellow-500/30 mx-auto mt-4"></div>
-        </div>
-        <div class="space-y-6">
-            <div class="p-5 border border-white/10 bg-black/40 rounded-xl relative overflow-hidden">
-                <div class="text-[8px] text-yellow-500 uppercase font-black tracking-widest mb-3 flex items-center gap-2">
-                    <span class="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-pulse"></span> ASSET IDENTITY
-                </div>
-                <p class="text-2xl font-bold text-white uppercase tracking-tight">${p.title}</p>
-                <div class="flex justify-between items-end mt-4">
-                   <div>
-                       <p class="text-[7px] text-slate-500 uppercase">Registered Creator</p>
-                       <p class="text-[11px] font-mono text-white/80">${p.owner.slice(-4)}</p>
-                   </div>
-                   <div class="text-right">
-                       <p class="text-[7px] text-slate-500 uppercase">Valuation</p>
-                       <p class="text-[11px] font-bold text-yellow-500">KES ${p.price}</p>
-                   </div>
-                </div>
-            </div>
-            <div class="grid grid-cols-2 gap-4">
-                <div class="p-4 border border-white/5 bg-white/5 rounded-xl">
-                    <p class="text-[7px] text-slate-500 uppercase mb-1">Registration Date</p>
-                    <p class="text-[11px] font-mono text-cyan-400 font-bold">${dateStr}</p>
-                </div>
-                <div class="p-4 border border-white/5 bg-white/5 rounded-xl">
-                    <p class="text-[7px] text-slate-500 uppercase mb-1">System Time (EAT)</p>
-                    <p class="text-[11px] font-mono text-cyan-400 font-bold">${timeStr}</p>
-                </div>
-            </div>
-            <div class="p-5 border border-dashed border-white/20 bg-black/20 rounded-xl">
-                <p class="text-[8px] text-slate-400 uppercase font-bold tracking-widest mb-2">Neural CID Hash (Defensible Evidence)</p>
-                <p class="text-[10px] font-mono text-cyan-500 break-all leading-relaxed bg-black/40 p-3 rounded border border-white/5 shadow-inner">
-                    ${p.cid}
-                </p>
-            </div>
-        </div>
-        <div class="legal-seal">CERTIFIED</div>
-        <div class="mt-10 flex gap-3 no-print">
-            <button onclick="window.print()" class="flex-1 py-4 bg-yellow-500 text-black text-[10px] font-black uppercase rounded-xl btn-glow shadow-xl">Download Legal PDF</button>
-            <button onclick="closeCert()" class="flex-1 py-4 bg-white/5 text-white text-[10px] font-black uppercase rounded-xl border border-white/10 hover:bg-white/10 transition-all">Close Audit</button>
-        </div>
-        <div class="mt-6 pt-4 border-t border-white/5 text-center">
-            <p class="text-[7px] text-slate-600 uppercase leading-relaxed font-mono">
-                This document serves as cryptographic proof of ownership within the iNFLUENSA Neural Mesh.<br/>
-                Verification Code: ${btoa(p._id).substring(0,12)} | Block Height: #882,109
-            </p>
-        </div>
-    `;
-    document.getElementById("certModal").classList.remove("hidden");
-}
+mongoose.connect(process.env.MONGO_URI)
+    .then(() => console.log('🔥 iNFLUENSA Grid: MongoDB Connected'))
+    .catch(err => console.error('❌ Grid Connection Error:', err));
 
-async function shareAndDownload(postId, price) {
-    if(confirm(`Confirm Premium License for KES ${10.0*price}?`)) await unlockIP(postId, 'share_download');
-}
+// --- SCHEMAS ---
+const postSchema = new mongoose.Schema({
+    title: String, price: Number, owner: String, mime: String, filename: String, 
+    cid: { type: String, unique: true }, unlocked_by: [String], licensed_to: [String],
+    scarcity_limit: { type: Number, default: 0 }, 
+    collaborators: [{ node: String, signature: String, split: Number, signedAt: Number, contractHash: String }],
+    is_burned: { type: Boolean, default: false }, timestamp: { type: Number, default: Date.now },
+    is_stream: { type: Boolean, default: false }, stream_url: String,
+    physical_sync_count: { type: Number, default: 0 }
+});
+const Post = mongoose.model('Post', postSchema);
 
-function requestWithdrawal() {
-    document.getElementById('withdrawalModal').classList.remove('hidden');
-    document.getElementById('payoutPhone').value = currentUser.identity;
-    updateWalletUI();
-}
+const userSchema = new mongoose.Schema({ 
+    identity: { type: String, unique: true, index: true }, 
+    afroCoins: { type: Number, default: 0 },
+    earnings: { type: Number, default: 0 },
+    lastSeen: { type: Number, default: Date.now } 
+});
+const User = mongoose.model('User', userSchema);
 
-function togglePayoutFields() {
-    const method = document.getElementById('payoutMethod').value;
-    document.getElementById('mobileMoneyFields').classList.toggle('hidden', method !== 'mobile_money');
-    document.getElementById('bankFields').classList.toggle('hidden', method !== 'bank_transfer');
-}
+const vaultSchema = new mongoose.Schema({ 
+    id: { type: String, default: 'protocol_vault' }, 
+    balance: { type: Number, default: 0 }, 
+    totalAfroMinted: { type: Number, default: 0 },
+    platformAfroReserve: { type: Number, default: 0 } 
+});
+const Vault = mongoose.model('Vault', vaultSchema);
 
-async function finalizeWithdrawal() {
-    const method = document.getElementById('payoutMethod').value;
-    const btn = document.getElementById('withdrawSubmitBtn');
-    let payload = { identity: currentUser.identity, type: method };
+const transactionSchema = new mongoose.Schema({
+    checkoutID: { type: String, unique: true },
+    postID: String,
+    userPhone: String,
+    amountPaid: Number, 
+    currency: { type: String, default: 'KES' }, 
+    gateway: { type: String, default: 'mpesa' }, 
+    type: { type: String, enum: ['unlock', 'license', 'share_download', 'handshake_fee', 'physical_unit_sync'] }, 
+    handshakeID: String,
+    status: { type: String, default: 'pending' }, 
+    timestamp: { type: Number, default: Date.now }
+});
+const Transaction = mongoose.model('Transaction', transactionSchema);
 
-    if (method === 'mobile_money') {
-        payload.phone = document.getElementById('payoutPhone').value;
-    } else {
-        payload.account_number = document.getElementById('accountNumber').value;
-        payload.bank_code = document.getElementById('bankCode').value;
+const handshakeSchema = new mongoose.Schema({
+    postId: { type: mongoose.Schema.Types.ObjectId, ref: 'Post' }, 
+    sender: String,
+    target: String,
+    split: Number,
+    signature: String, 
+    contractHash: String,
+    status: { type: String, default: 'pending', enum: ['pending', 'accepted', 'rejected', 'countered', 'paid'] }, 
+    timestamp: { type: Number, default: Date.now }
+});
+const Handshake = mongoose.model('Handshake', handshakeSchema);
+// 1. DEFINING THE SCHEMA
+const proposalSchema = new mongoose.Schema({
+    title: { 
+        type: String, 
+        required: true,
+        uppercase: true,
+        trim: true
+    },
+    description: { 
+        type: String, 
+        required: true 
+    },
+    category: { 
+        type: String, 
+        enum: ['Treasury', 'Protocol', 'Expansion'], 
+        default: 'Protocol' 
+    },
+    quorum: { 
+        type: Number, 
+        required: true,
+        min: 1 
+    },
+    creator: { 
+        type: String, // Using string for phone based identity
+        ref: 'User', 
+        required: true 
+    },
+    votes: {
+        yes: { type: Number, default: 0 },
+        no: { type: Number, default: 0 },
+        voters: [{ type: String }] 
+    },
+    status: { 
+        type: String, 
+        enum: ['ACTIVE', 'PASSED', 'REJECTED'], 
+        default: 'ACTIVE' 
+    },
+    timestamp: { 
+        type: Date, 
+        default: Date.now 
     }
+});
 
-    btn.innerText = "HACKING PAYOUT RAILS...";
-    btn.disabled = true;
+const Proposal = mongoose.model('Proposal', proposalSchema);
+
+
+
+
+// --- HELPERS ---
+const cleanPhone = (phone) => {
+    if(!phone) return "";
+    let cleaned = phone.toString().replace(/\D/g, ''); 
+    if (cleaned.startsWith('0')) cleaned = '254' + cleaned.substring(1);
+    return cleaned; 
+};
+
+const calculateLiveTax = async () => {
+    const nodeCount = await User.countDocuments({});
+    const dynamicModifier = Math.log10(nodeCount + 10);
+    const liveRate = PROTOCOL_FEE / dynamicModifier;
+    return Math.max(0.01, liveRate); 
+};
+
+const governAfroMinting = async (requestedAmount) => {
+    const vault = await Vault.findOneAndUpdate({ id: 'protocol_vault' }, {}, { upsert: true, new: true });
+    const rewardAmount = requestedAmount * MINTING_REWARD_RATE;
+    const userRewardTotal = rewardAmount * 2; 
+    const totalNewMint = userRewardTotal / (1 - PLATFORM_RESERVE_SHARE);
+    const platformShare = totalNewMint * PLATFORM_RESERVE_SHARE;
+    if (vault.totalAfroMinted + totalNewMint > AFRO_HARD_CAP) return { user: 0, platform: 0 };
+    await Vault.updateOne({ id: 'protocol_vault' }, { $inc: { totalAfroMinted: totalNewMint, platformAfroReserve: platformShare } });
+    return { user: rewardAmount, platform: platformShare };
+};
+
+const CURRENCY_MAP = {
+    '254': { code: 'KES', rate: 1 },
+    '256': { code: 'UGX', rate: 30 }, 
+    '255': { code: 'TZS', rate: 20 }, 
+    '234': { code: 'NGN', rate: 11 }  
+};
+
+const getCurrencyByPhone = (phone) => {
+    for (let prefix in CURRENCY_MAP) {
+        if (phone.startsWith(prefix)) return CURRENCY_MAP[prefix];
+    }
+    return CURRENCY_MAP['254'];
+};
+
+const triggerUniversalPush = async (phone, amountInKES, postId, type, handshakeId = null) => {
+    const formattedPhone = cleanPhone(phone);
+    if (!formattedPhone) throw new Error("IDENT_SIGNAL_LOST");
+    
+    const currencyData = getCurrencyByPhone(formattedPhone);
+    const convertedAmount = Math.ceil(amountInKES * currencyData.rate);
+    
+    try {
+        if (formattedPhone.startsWith('254')) {
+            return await triggerStkPush(formattedPhone, convertedAmount, postId, type, handshakeId);
+        } 
+        return await triggerFlutterwavePush(formattedPhone, convertedAmount, currencyData.code, postId, type, handshakeId);
+    } catch (err) {
+        console.error(`❌ SYNC_DISRUPTION: ${err.message}`);
+        throw err;
+    }
+};
+
+// --- OPTIMIZED MPESA LOGIC ---
+let mpesaTokenCache = {
+    token: null,
+    expiry: 0
+};
+
+const getMpesaBaseUrl = () => "https://api.safaricom.co.ke";
+
+const getMpesaToken = async () => {
+    const now = Date.now();
+    if (mpesaTokenCache.token && now < mpesaTokenCache.expiry) {
+        return mpesaTokenCache.token;
+    }
 
     try {
-        const res = await fetch(`${API_URL}/withdraw/flutterwave`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+        const baseUrl = getMpesaBaseUrl();
+        console.log(`🌐 Syncing with Gateway: ${baseUrl}`);
+        console.log("🔍 MPESA: Syncing Neural Token...");
+        
+        const consumerKey = (process.env.MPESA_CONSUMER_KEY || "").trim();
+        const consumerSecret = (process.env.MPESA_CONSUMER_SECRET || "").trim();
+        const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
+        
+        const res = await axios.get(`${baseUrl}/oauth/v1/generate?grant_type=client_credentials`, {
+            headers: { Authorization: `Basic ${auth}` },
+            timeout: 10000
         });
-        const data = await res.json();
-        if (res.ok) {
-            showToast("Payout Initialized: Funds on route.");
-            document.getElementById('withdrawalModal').classList.add('hidden');
-            updateWalletUI();
-        } else {
-            showToast(data.error || "Vault Locked: Minimum KES 500 required.");
-        }
-    } catch (e) {
-        showToast("Neural Bridge Error. Try again.");
-    } finally {
-        btn.innerText = "Initiate Payout";
-        btn.disabled = false;
+        
+        mpesaTokenCache.token = res.data.access_token;
+        mpesaTokenCache.expiry = now + (3500 * 1000); 
+        
+        console.log("✅ MPESA: Token Synchronized");
+        return res.data.access_token;
+    } catch (error) {
+        console.error("❌ MPESA TOKEN SYNC ERROR:", error.response?.data || error.message);
+        throw new Error("FAILED_TO_SYNC_WITH_SAFARICOM");
     }
-}
-</script>
-</body>
-</html>
+};
+
+const triggerStkPush = async (phone, amount, postId, type, handshakeId = null) => {
+    try {
+        const token = await getMpesaToken();
+        const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
+        
+        const shortCode = (process.env.MPESA_SHORTCODE || "").trim();
+        const passKey = (process.env.MPESA_PASSKEY || "").trim();
+        const callbackUrl = (process.env.MPESA_CALLBACK_URL || "").trim();
+        
+        const password = Buffer.from(`${shortCode}${passKey}${timestamp}`).toString('base64');
+        
+        const payload = {
+            "BusinessShortCode": shortCode,
+            "Password": password,
+            "Timestamp": timestamp,
+            "TransactionType": "CustomerBuyGoodsOnline",
+            "Amount": Math.round(amount), 
+            "PartyA": phone,
+            "PartyB": "3422513",
+            "PhoneNumber": phone,
+            "CallBackURL": callbackUrl,
+            "AccountReference": `IP-${postId.toString().slice(-6).toUpperCase()}`,
+            "TransactionDesc": `iNFLUENSA ${type.toUpperCase()}`
+        };
+
+        console.log(`🛰️ MPESA: DISPATCHING STK TO ${phone} | AMT: ${amount}`);
+        
+        const response = await axios.post(`${getMpesaBaseUrl()}/mpesa/stkpush/v1/processrequest`, payload, { 
+            headers: { 'Authorization': `Bearer ${token}` },
+            timeout: 15000
+        });
+
+        if (!response.data || !response.data.CheckoutRequestID) {
+            throw new Error("GATEWAY_EMPTY_RESPONSE");
+        }
+
+        await Transaction.create({
+            checkoutID: response.data.CheckoutRequestID,
+            postID: postId, userPhone: phone, amountPaid: amount, type, gateway: 'mpesa', currency: 'KES', handshakeID: handshakeId
+        });
+        
+        return response.data;
+    } catch (error) {
+        const errorDetail = error.response?.data || error.message;
+        console.error("❌ MPESA STK CRITICAL FAILURE:", JSON.stringify(errorDetail, null, 2));
+        throw new Error(errorDetail.errorMessage || "STK_PUSH_DISRUPTED");
+    }
+};
+
+const triggerFlutterwavePush = async (phone, amount, currency, postId, type, handshakeId = null) => {
+    const tx_ref = `FLW-${Date.now()}-${postId.toString().slice(-4)}`;
+    let network = "MTN"; 
+    if(phone.startsWith('255')) network = "TIGO";
+    if(phone.startsWith('234')) network = "NQR";
+
+    const payload = {
+        tx_ref, amount, currency, network,
+        email: "node@influensa.io",
+        phone_number: phone,
+        fullname: "iNFLUENSA Node",
+        callback_url: (process.env.FLW_CALLBACK_URL || "").trim()
+    };
+
+    try {
+        console.log(`🛰️ FLW: INITIATING PUSH TO ${phone}`);
+        const response = await axios.post("https://api.flutterwave.com/v3/charges?type=mobile_money_uganda", payload, {
+            headers: { Authorization: `Bearer ${(process.env.FLW_SECRET_KEY || "").trim()}` },
+            timeout: 15000 
+        });
+
+        await Transaction.create({
+            checkoutID: tx_ref, 
+            postID: postId, userPhone: phone, amountPaid: amount, type, gateway: 'flutterwave', currency, handshakeID: handshakeId
+        });
+
+        return { CheckoutRequestID: tx_ref }; 
+    } catch (error) {
+        console.error("❌ FLW PUSH ERROR:", error.response?.data || error.message);
+        throw error;
+    }
+};
+
+// --- FLUID SOCKET LOGIC ---
+io.on('connection', (socket) => {
+    socket.on('join_payment_room', (checkoutID) => {
+        socket.join(checkoutID);
+        console.log(`🔌 Node listening for Sync: ${checkoutID}`);
+    });
+    
+    socket.on('watch_post', (postId) => {
+        socket.join(`viewers_${postId}`);
+        const viewerCount = io.sockets.adapter.rooms.get(`viewers_${postId}`)?.size || 0;
+        io.to(`viewers_${postId}`).emit('viewer_update', { postId, count: viewerCount });
+    });
+
+    socket.on('leave_post', (postId) => {
+        socket.leave(`viewers_${postId}`);
+        const viewerCount = io.sockets.adapter.rooms.get(`viewers_${postId}`)?.size || 0;
+        io.to(`viewers_${postId}`).emit('viewer_update', { postId, count: viewerCount });
+    });
+
+    socket.on('disconnecting', () => {
+        for (const room of socket.rooms) {
+            if (room.startsWith('viewers_')) {
+                const postId = room.replace('viewers_', '');
+                setTimeout(() => {
+                    const count = io.sockets.adapter.rooms.get(room)?.size || 0;
+                    io.to(room).emit('viewer_update', { postId, count });
+                }, 100);
+            }
+        }
+    });
+});
+
+const processGridSuccess = async (tx) => {
+    if (tx.status === 'completed') return; 
+
+    const post = await Post.findById(tx.postID);
+    if (!post) {
+        console.error("❌ Post context missing for transaction:", tx.checkoutID);
+        return;
+    }
+
+    const platformFee = tx.amountPaid * PROTOCOL_FEE;
+    const netPayout = tx.amountPaid - platformFee;
+    const mintResults = await governAfroMinting(tx.amountPaid);
+    const reward = mintResults.user;
+
+    await Vault.findOneAndUpdate({ id: 'protocol_vault' }, { $inc: { balance: platformFee } }, { upsert: true });
+    await User.findOneAndUpdate({ identity: tx.userPhone }, { $inc: { afroCoins: reward }, lastSeen: Date.now() }, { upsert: true });
+
+    if (tx.type === 'handshake_fee') {
+        const handshake = await Handshake.findById(tx.handshakeID);
+        if (handshake) {
+            await Post.findByIdAndUpdate(tx.postID, { 
+                $push: { 
+                    collaborators: { 
+                        node: handshake.sender, 
+                        signature: handshake.signature, 
+                        split: handshake.split, 
+                        contractHash: handshake.contractHash, 
+                        signedAt: Date.now() 
+                    } 
+                } 
+            });
+            handshake.status = 'paid';
+            await handshake.save();
+        }
+    } else {
+        if (post.collaborators && post.collaborators.length > 0) {
+            let totalCollaboratorShare = 0;
+            for (let colab of post.collaborators) {
+                const colabEarnings = netPayout * (colab.split / 100);
+                await User.findOneAndUpdate({ identity: colab.node }, { $inc: { earnings: colabEarnings } });
+                totalCollaboratorShare += colabEarnings;
+            }
+            const ownerEarnings = netPayout - totalCollaboratorShare;
+            await User.findOneAndUpdate({ identity: post.owner }, { $inc: { earnings: ownerEarnings } });
+        } else {
+            await User.findOneAndUpdate({ identity: post.owner }, { $inc: { earnings: netPayout } });
+        }
+
+        let updateField = (tx.type === 'license') 
+            ? { $addToSet: { licensed_to: tx.userPhone } } 
+            : { $addToSet: { unlocked_by: tx.userPhone } };
+        
+        if (tx.type === 'physical_unit_sync') {
+            await Post.findByIdAndUpdate(tx.postID, { $inc: { physical_sync_count: 1 } });
+        }
+        
+        await Post.findByIdAndUpdate(tx.postID, updateField);
+    }
+
+    tx.status = 'completed';
+    await tx.save();
+    
+    io.to(tx.checkoutID).emit('payment_success', { 
+        message: tx.type === 'handshake_fee' ? "Contract Sync Active" : "Nodal Sync Confirmed", 
+        postId: tx.postID,
+        txType: tx.type 
+    });
+    
+    console.log(`✅ SYNC COMPLETE: IP ${tx.postID} for Node ${tx.userPhone}`);
+};
+
+// --- ROUTES ---
+app.get('/api/health', async (req, res) => {
+    const healthData = {
+        status: 'SIGNAL_STRONG',
+        timestamp: Date.now(),
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        grid: {
+            database: mongoose.connection.readyState === 1 ? 'CONNECTED' : 'DISCONNECTED',
+            socket_nodes: io.sockets.adapter.rooms.size
+        }
+    };
+    if (mongoose.connection.readyState !== 1) return res.status(503).json(healthData);
+    res.status(200).json(healthData);
+});
+
+app.post('/api/flw-webhook', async (req, res) => {
+    const secretHash = process.env.FLW_HASH;
+    const signature = req.headers["verif-hash"];
+    if (!signature || signature !== secretHash) return res.status(401).end();
+
+    const { status, tx_ref } = req.body.data;
+    const tx = await Transaction.findOne({ checkoutID: tx_ref });
+    if (!tx) return res.status(200).end();
+
+    if (status === "successful") {
+        await processGridSuccess(tx);
+    } else {
+        tx.status = 'failed';
+        await tx.save();
+        io.to(tx_ref).emit('payment_failed');
+    }
+    res.status(200).end();
+});
+
+app.post('/api/callback', async (req, res) => {
+    console.log("📥 RECEIVED CALLBACK FROM SAFARICOM:", JSON.stringify(req.body, null, 2));
+    
+    const body = req.body;
+    if (!body || !body.Body || !body.Body.stkCallback) return res.status(400).end();
+    
+    const callbackData = body.Body.stkCallback;
+    const checkoutID = callbackData.CheckoutRequestID;
+    try {
+        const tx = await Transaction.findOne({ checkoutID });
+        if (!tx) {
+            console.warn(`⚠️ Callback received for unknown CheckoutID: ${checkoutID}`);
+            return res.json({ ResultCode: 0 }); 
+        }
+        if (callbackData.ResultCode === 0) {
+            await processGridSuccess(tx);
+        } else { 
+            console.log(`❌ Transaction Failed at Gateway: ${checkoutID} | Reason: ${callbackData.ResultDesc}`);
+            tx.status = 'failed';
+            await tx.save();
+            io.to(checkoutID).emit('payment_failed');
+        }
+        res.json({ ResultCode: 0 });
+    } catch (err) { 
+        console.error("❌ CALLBACK PROCESSING ERROR:", err);
+        res.json({ ResultCode: 1 }); 
+    }
+});
+
+app.post('/api/posts/:id/unlock', async (req, res) => {
+    const { phone, type } = req.body; 
+    try {
+        const post = await Post.findById(req.params.id);
+        if (!post) return res.status(404).json({ error: "IP not found" });
+        let rawPriceKES = (type === 'share_download' || type === 'license') ? post.price * 10.0 : post.price;
+        const result = await triggerUniversalPush(phone, Math.max(1, Math.ceil(rawPriceKES)), post._id, type || 'unlock');
+        
+        if (result && (result.CheckoutRequestID || result.tx_ref)) {
+            res.json({ success: true, checkoutID: result.CheckoutRequestID || result.tx_ref });
+        } else {
+            throw new Error("GATEWAY_FAILED_TO_GENERATE_SYNC_ID");
+        }
+    } catch (err) { 
+        console.error("❌ UNLOCK ERROR:", err.message);
+        res.status(500).json({ error: "Universal Sync Failed", details: err.message }); 
+    }
+});
+
+app.post('/api/nodes/withdraw', async (req, res) => {
+    const { identity, amount } = req.body;
+    const cleaned = cleanPhone(identity);
+    try {
+        const user = await User.findOne({ identity: cleaned });
+        if (!user || user.earnings < amount) {
+            return res.status(400).json({ error: "INSUFFICIENT_NODAL_BALANCE" });
+        }
+        if (amount < 10) return res.status(400).json({ error: "BELOW_MINIMUM" });
+
+        const config = getCurrencyByPhone(cleaned);
+        const payload = {
+            "account_bank": "MPS", 
+            "account_number": cleaned,
+            "amount": amount,
+            "currency": config.code,
+            "narration": "iNFLUENSA_NODE_PAYOUT",
+            "reference": `WD-${Date.now()}-${cleaned.slice(-4)}`
+        };
+
+        const response = await axios.post("https://api.flutterwave.com/v3/transfers", payload, {
+            headers: { Authorization: `Bearer ${(process.env.FLW_SECRET_KEY || "").trim()}` },
+            timeout: 15000 
+        });
+
+        if (response.data.status === "success") {
+            await User.findOneAndUpdate({ identity: cleaned }, { $inc: { earnings: -amount } });
+            res.json({ success: true, message: "Sync Outbound Success", data: response.data.data });
+        } else {
+            res.status(500).json({ error: "GATEWAY_TRANSFER_FAILED" });
+        }
+    } catch (err) { res.status(500).json({ error: "Neural Withdrawal Error" }); }
+});
+
+app.post('/api/posts', upload.single('file'), async (req, res) => {
+    try {
+        const { title, price, owner, scarcity_limit } = req.body;
+        if (!req.file) return res.status(400).json({ error: "FILE_REQUIRED" });
+        
+        const cid = crypto.createHash('sha256').update(title + owner + Date.now()).digest('hex');
+        const safeName = `${Date.now()}-${crypto.randomUUID()}`;
+const gcsPath = `private/${safeName}`;
+
+await bucket.upload(req.file.path, {
+    destination: gcsPath,
+    resumable: false,
+    metadata: {
+        contentType: req.file.mimetype
+    }
+});
+
+fs.unlinkSync(req.file.path);
+        const post = await Post.create({ 
+            title, price, owner: cleanPhone(owner), 
+            mime: req.file.mimetype, filename: gcsPath, 
+            cid, scarcity_limit: scarcity_limit || 0, is_stream: false
+        });
+        res.status(201).json(post);
+    } catch (err) { res.status(500).json({ error: "Post Sync Failed" }); }
+});
+
+app.post('/api/posts/stream', async (req, res) => {
+
+    try {
+
+        const {
+            title,
+            price,
+            owner,
+            stream_url,
+            scarcity_limit
+        } = req.body;
+
+        if (!stream_url) {
+            return res.status(400).json({
+                error: "STREAM_URL_REQUIRED"
+            });
+        }
+
+        // Validate URL
+        let parsedUrl;
+
+        try {
+            parsedUrl = new URL(stream_url);
+        } catch {
+            return res.status(400).json({
+                error: "INVALID_STREAM_URL"
+            });
+        }
+
+        // Optional whitelist
+        const allowedHosts = [
+            'youtube.com',
+            'www.youtube.com',
+            'youtu.be',
+            'twitch.tv',
+            'www.twitch.tv',
+            'kick.com'
+        ];
+
+        const isAllowed = allowedHosts.includes(parsedUrl.hostname);
+        if (!isAllowed) {
+            return res.status(400).json({
+                error: "UNSUPPORTED_STREAM_PROVIDER"
+            });
+        }
+
+        const cid = crypto
+            .createHash('sha256')
+            .update(title + stream_url + Date.now())
+            .digest('hex');
+
+        const post = await Post.create({
+            title: title || "Live Stream",
+            price: Number(price) || 0,
+            owner: cleanPhone(owner),
+            mime: "video/stream",
+            cid,
+            scarcity_limit: Number(scarcity_limit) || 0,
+            is_stream: true,
+            stream_url: stream_url.trim()
+        });
+
+        return res.status(201).json({
+            success: true,
+            post
+        });
+
+    } catch (err) {
+
+        console.error(err);
+
+        return res.status(500).json({
+            error: "STREAM_SYNC_FAILED"
+        });
+
+    }
+
+});
+
+app.get('/api/handshake/outgoing/:identity', async (req, res) => {
+    try {
+        const identity = cleanPhone(req.params.identity);
+        const updates = await Handshake.find({ sender: identity }).sort({ timestamp: -1 }).limit(10);
+        res.json(updates);
+    } catch (err) { res.status(500).json({ error: "Status Pulse Failed" }); }
+});
+
+app.post('/api/handshake/counter/:id', async (req, res) => {
+    try {
+        const { split } = req.body;
+        const handshake = await Handshake.findByIdAndUpdate(req.params.id, { 
+            split, 
+            status: 'countered', 
+            timestamp: Date.now() 
+        }, { new: true });
+        
+        const result = await triggerUniversalPush(handshake.sender, 10, handshake.postId, 'handshake_fee', handshake._id);
+        res.json({ success: true, checkoutID: result.CheckoutRequestID || result.tx_ref });
+    } catch (err) { res.status(500).json({ error: "Negotiation Sync Failed" }); }
+});
+
+app.get('/api/handshake/pulse/:identity', async (req, res) => {
+    try {
+        const identity = cleanPhone(req.params.identity);
+        const count = await Handshake.countDocuments({ target: identity, status: 'pending' });
+        res.json({ active: count > 0, count });
+    } catch (err) { res.status(500).json({ error: "Pulse Sync Failed" }); }
+});
+
+app.post('/api/handshake/offer', async (req, res) => {
+    try {
+        const { postId, sender, split, signature, contractHash } = req.body;
+        const post = await Post.findById(postId);
+        const handshake = await Handshake.create({ postId, sender: cleanPhone(sender), target: post.owner, split, signature, contractHash });
+        res.status(201).json(handshake);
+    } catch (err) { res.status(500).json({ error: "Neural Signature Failed" }); }
+});
+
+app.get('/api/handshake/pending/:identity', async (req, res) => {
+    try {
+        const identity = cleanPhone(req.params.identity);
+        const offers = await Handshake.find({ target: identity, status: 'pending' }).populate('postId');
+        res.json(offers);
+    } catch (err) { res.status(500).json({ error: "Neural Retrieval Error" }); }
+});
+
+app.post('/api/handshake/accept/:id', async (req, res) => {
+    try {
+        const handshake = await Handshake.findById(req.params.id);
+        const result = await triggerUniversalPush(handshake.sender, 10, handshake.postId, 'handshake_fee', handshake._id);
+        handshake.status = 'accepted'; 
+        await handshake.save();
+        res.json({ success: true, checkoutID: result.CheckoutRequestID || result.tx_ref });
+    } catch (err) { res.status(500).json({ error: "Handshake Sync Failure" }); }
+});
+
+app.post('/api/handshake/reject/:id', async (req, res) => {
+    try {
+        const handshake = await Handshake.findById(req.params.id);
+        handshake.status = 'rejected'; await handshake.save();
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: "Rejection Sync Failure" }); }
+});
+
+app.post('/api/nodes/connect', async (req, res) => {
+    const { identity } = req.body;
+    try {
+        const user = await User.findOneAndUpdate({ identity: cleanPhone(identity) }, { lastSeen: Date.now() }, { upsert: true, new: true });
+        const nodeCount = await User.countDocuments({}); 
+        res.json({ success: true, nodeCount, user });
+    } catch (err) { res.status(500).json({ error: "Sync Failure" }); }
+});
+
+app.get('/api/stk-status/:checkoutID', async (req, res) => {
+    try {
+        const tx = await Transaction.findOne({ checkoutID: req.params.checkoutID });
+        res.json({ status: tx ? tx.status : 'not_found' });
+    } catch (err) { res.status(500).json({ error: "Polling failed" }); }
+});
+
+app.get('/api/media/:postId', async (req, res) => {
+
+    try {
+
+        const { phone } = req.query;
+
+        if (!phone) {
+            return res.status(401).send("PHONE_REQUIRED");
+        }
+
+        const post = await Post.findOne({
+            _id: req.params.postId,
+            is_burned: false
+        });
+
+        if (!post) {
+            return res.status(404).send("NOT_FOUND");
+        }
+
+        const cleaned = cleanPhone(phone);
+
+        const hasAccess =
+            post.owner === cleaned ||
+            post.unlocked_by.includes(cleaned) ||
+            post.licensed_to.includes(cleaned);
+
+        if (!hasAccess) {
+            return res.status(403).send("LOCKED");
+        }
+
+        /*
+        STREAM URL
+        */
+
+        if (post.is_stream) {
+            return res.redirect(post.stream_url);
+        }
+
+        /*
+        GCS FILE
+        */
+
+        const file = bucket.file(post.filename);
+
+        /*
+        TEMP VIEW URL
+        */
+
+        const [url] = await file.getSignedUrl({
+            version: 'v4',
+            action: 'read',
+            expires: Date.now() + 5 * 60 * 1000
+        });
+
+        return res.json({
+            success: true,
+            mime: post.mime,
+            url
+        });
+
+    } catch (err) {
+
+        console.error(err);
+
+        return res.status(500).send("GRID_ERROR");
+
+    }
+
+});
+
+// BROADCAST ENDPOINT
+const router = express.Router();
+
+
+// POST: This is the 'TRANSMITTING' logic
+app.post('/api/governance/propose', async (req, res) => {
+    try {
+        const { title, description, category, quorum, creator } = req.body;
+
+        // Ensure mandatory data exists before touching the DB
+        if (!title || !description || !creator) {
+            return res.status(400).json({ error: "INPUT_REQUIRED" });
+        }
+
+        const newProposal = new Proposal({
+            title: title.trim(),
+            description: description.trim(),
+            category: category || 'Protocol',
+            quorum: Number(quorum) || 1, // Minimum 1 to satisfy schema
+            creator: creator,            // Ensure this is a String in your Schema!
+            votes: { yes: 0, no: 0, voters: [] }
+        });
+
+        const savedProposal = await newProposal.save();
+        
+        // Sending this JSON back stops the 'Transmitting' spinner on your UI
+        res.status(201).json(savedProposal);
+
+    } catch (err) {
+        console.error("SYNC_ERROR:", err.message);
+        res.status(500).json({ 
+            error: "GRID_OFFLINE", 
+            details: err.message 
+        });
+    }
+});
+
+// GET: This populates the feed below the 'Transmitting' button
+app.get('/api/governance/proposals', async (req, res) => {
+    try {
+        const proposals = await Proposal.find().sort({ timestamp: -1 });
+        res.json(proposals);
+    } catch (err) {
+        res.status(500).json({ error: "FETCH_FAILED" });
+    }
+});
+
+
+
+app.get('/api/governance/sidebar', async (req, res) => {
+    try {
+        const vault = await Vault.findOne({ id: 'protocol_vault' });
+        const nodes = await User.countDocuments({});
+        const activeIPs = await Post.countDocuments({ is_burned: false });
+
+        // Safer balance check
+        const balance = (vault && vault.balance) ? vault.balance.toFixed(2) : "0.00";
+
+        res.json({ nodes, activeIPs, vaultBalance: balance, liveTax: "7.89" });
+    } catch (err) { 
+        console.error("SIDEBAR_ERROR:", err); // ADD THIS
+        res.status(500).json({ error: "Governance Offline", details: err.message }); 
+    }
+});
+
+app.get('/api/governance/ledger', async (req, res) => {
+    try {
+        const transactions = await Transaction.find({ status: 'completed' })
+            .sort({ timestamp: -1 })
+            .limit(50);
+        
+        const ledger = transactions.map(tx => ({
+            id: tx.checkoutID,
+            amount: tx.amountPaid,
+            taxCollected: (tx.amountPaid * PROTOCOL_FEE).toFixed(2),
+            timestamp: tx.timestamp,
+            type: tx.type
+        }));
+        
+        res.json(ledger);
+    } catch (err) { res.status(500).json({ error: "Ledger Sync Failed" }); }
+});
+
+app.get('/api/stats', async (req, res) => {
+    try {
+        const vault = await Vault.findOne({ id: 'protocol_vault' });
+        const userCount = await User.countDocuments({});
+        const currentLiveRate = await calculateLiveTax();
+        res.json({ 
+            taxVault: vault ? (vault.balance || 0).toFixed(2) : "0.00", 
+            userCount: userCount, 
+            platformReserve: vault ? (vault.platformAfroReserve || 0).toFixed(2) : "0.00", 
+            currentTaxRate: (currentLiveRate * 100).toFixed(2) + "%" 
+        });
+    } catch (err) { res.status(500).json({ error: "Stats failure" }); }
+});
+
+app.get('/api/search', async (req, res) => {
+    const { q } = req.query;
+    try {
+        const posts = await Post.find({ is_burned: false, $or: [{ title: { $regex: q, $options: 'i' } }, { owner: { $regex: q, $options: 'i' } }, { cid: { $regex: q, $options: 'i' } }] }).sort({ timestamp: -1 });
+        res.json(posts);
+    } catch (err) { res.status(500).json({ error: "Search logic failure" }); }
+});
+
+app.get('/api/posts', async (req, res) => {
+    const posts = await Post.find({ is_burned: false }).sort({ timestamp: -1 });
+    res.json(posts);
+});
+
+app.delete('/api/posts/:id', async (req, res) => {
+    try {
+        await Post.findByIdAndUpdate(req.params.id, { is_burned: true });
+        res.sendStatus(200);
+    } catch (err) { res.status(500).json({ error: "Burn failed" }); }
+});
+
+// --- PHYSICAL ASSET SYNC EXTENSIONS ---
+
+app.get('/api/verify/:cid', async (req, res) => {
+    try {
+        const post = await Post.findOne({ cid: req.params.cid, is_burned: false });
+        if (!post) return res.status(404).json({ authenticated: false, message: "IP_NOT_FOUND_IN_GRID" });
+        
+        const vault = await Vault.findOne({ id: 'protocol_vault' });
+        res.json({
+            authenticated: true,
+            title: post.title,
+            original_innovator: post.owner,
+            timestamp: post.timestamp,
+            scarcity_index: post.physical_sync_count,
+            scarcity_limit: post.scarcity_limit,
+            grid_status: "VERIFIED_HUMAN_CAPITAL",
+            afro_backing: vault ? vault.totalAfroMinted > 0 : false
+        });
+    } catch (err) { res.status(500).json({ error: "Neural Verification Offline" }); }
+});
+
+app.post('/api/physical/sync', async (req, res) => {
+    const { cid, buyerPhone, merchantPhone } = req.body;
+    try {
+        const post = await Post.findOne({ cid, is_burned: false });
+        if (!post) return res.status(404).json({ error: "IP_RECORD_MISSING" });
+        
+        const cleanedBuyer = cleanPhone(buyerPhone);
+        const amount = post.price; 
+        
+        const result = await triggerUniversalPush(cleanedBuyer, amount, post._id, 'physical_unit_sync');
+        
+        res.json({ 
+            success: true, 
+            message: "Physical Handshake Initiated", 
+            checkoutID: result.CheckoutRequestID || result.tx_ref 
+        });
+    } catch (err) { res.status(500).json({ error: "Physical Sync Disrupted" }); }
+});
+
+const PORT = process.env.PORT || 10000;
+server.listen(PORT, '0.0.0.0', async () => {
+    await launchProtocol();
+    console.log(`🚀 MASTER GRID ACTIVE | PORT: ${PORT}`);
+    console.log(`🔗 CALLBACK URL TARGET: ${process.env.MPESA_CALLBACK_URL}`);
+});
