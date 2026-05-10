@@ -41,6 +41,7 @@ const neuralSentryLog = new Map();
 const MAX_REQUESTS_PER_WINDOW = 500; 
 const WINDOW_MS = 60000; 
 
+setInterval(() => neuralSentryLog.clear(), 3600000); // Clear every hour
 
 
 const gcs = new Storage();
@@ -59,8 +60,10 @@ const multerStorage = multer.diskStorage({
     },
 
     filename: (req, file, cb) => {
-        cb(null, Date.now() + '-' + file.originalname);
-    }
+    const uniqueSuffix = crypto.randomBytes(4).toString('hex');
+    cb(null, `${Date.now()}-${uniqueSuffix}-${file.originalname}`);
+}
+
 });
 
 const upload = multer({
@@ -76,6 +79,7 @@ app.use(express.urlencoded({ limit: '110mb', extended: true }));
 
 
 // --- NEURAL SENTRY MIDDLEWARE ---
+
 app.use((req, res, next) => {
     if (req.path === '/api/health') return next();
     const ip = req.ip;
@@ -95,6 +99,8 @@ app.use((req, res, next) => {
         }
     }
     next();
+    
+    
 });
 
 app.use(express.static(__dirname));
@@ -603,32 +609,92 @@ app.post('/api/nodes/withdraw', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Neural Withdrawal Error" }); }
 });
 
+// --- UNIFIED PERSISTENT POST ROUTE ---
 app.post('/api/posts', upload.single('file'), async (req, res) => {
+    let localPath = null;
+    let processedPath = null;
+
     try {
         const { title, price, owner, scarcity_limit } = req.body;
         if (!req.file) return res.status(400).json({ error: "FILE_REQUIRED" });
-        
-        const cid = crypto.createHash('sha256').update(title + owner + Date.now()).digest('hex');
-        const safeName = `${Date.now()}-${crypto.randomUUID()}`;
-const gcsPath = `private/${safeName}`;
 
-await bucket.upload(req.file.path, {
-    destination: gcsPath,
-    resumable: false,
-    metadata: {
-        contentType: req.file.mimetype
+        localPath = req.file.path;
+        processedPath = path.join(uploadDir, `proc-${req.file.filename}`);
+
+        // 1. PERMANENT WATERMARKING (Burned into the file forever)
+        if (req.file.mimetype.startsWith('video/')) {
+            await new Promise((resolve, reject) => {
+                ffmpeg(localPath)
+                    .videoFilters({
+                        filter: 'drawtext',
+                        options: {
+                            text: `iNFLUENSA | NODE:${cleanPhone(owner)}`,
+                            fontcolor: 'white@0.3',
+                            fontsize: 24,
+                            x: 'w-tw-20', y: 'h-th-20'
+                        }
+                    })
+                    .outputOptions('-movflags faststart') 
+                    .save(processedPath)
+                    .on('end', resolve)
+                    .on('error', reject);
+            });
+        } else if (req.file.mimetype.startsWith('image/')) {
+            const image = await Jimp.read(localPath);
+            const font = await Jimp.loadFont(Jimp.FONT_SANS_32_WHITE);
+            image.print(font, 20, 20, `IP:GRID | NODE:${cleanPhone(owner)}`);
+            await image.writeAsync(processedPath);
+        }
+
+        // Determine which file to upload (processed if exists, else original)
+        const finalUploadPath = fs.existsSync(processedPath) ? processedPath : localPath;
+
+        // 2. CLOUD VAULT UPLOAD
+        const gcsPath = `vault/${Date.now()}-${req.file.originalname}`;
+        await bucket.upload(finalUploadPath, {
+            destination: gcsPath,
+            resumable: false,
+            metadata: { contentType: req.file.mimetype }
+        });
+
+        // 3. GENERATE UNIQUE CID
+        const cid = crypto.createHash('sha256')
+            .update(title + owner + Date.now())
+            .digest('hex');
+
+        // 4. DATABASE PERSISTENCE
+        const post = await Post.create({ 
+            title: title || "Untitled IP",
+            price: Number(price) || 0, 
+            owner: cleanPhone(owner), 
+            mime: req.file.mimetype, 
+            filename: gcsPath, // Permanent GCS Reference
+            cid: cid, 
+            scarcity_limit: Number(scarcity_limit) || 0,
+            unlocked_by: [],
+            licensed_to: [],
+            collaborators: [],
+            is_burned: false,
+            is_stream: false,
+            timestamp: Date.now()
+        });
+
+        // 5. CLEANUP LOCAL TEMP FILES
+        if (localPath && fs.existsSync(localPath)) fs.unlinkSync(localPath);
+        if (processedPath && fs.existsSync(processedPath)) fs.unlinkSync(processedPath);
+
+        console.log(`🚀 MASTER GRID: IP PERSISTED [CID: ${cid.slice(0, 8)}]`);
+        res.status(201).json(post);
+
+    } catch (err) {
+        console.error("❌ GRID_PERSISTENCE_CRITICAL_FAILURE:", err);
+        // Emergency Cleanup
+        if (localPath && fs.existsSync(localPath)) fs.unlinkSync(localPath);
+        if (processedPath && fs.existsSync(processedPath)) fs.unlinkSync(processedPath);
+        res.status(500).json({ error: "VAULT_SYNC_FAILED" });
     }
 });
 
-fs.unlinkSync(req.file.path);
-        const post = await Post.create({ 
-            title, price, owner: cleanPhone(owner), 
-            mime: req.file.mimetype, filename: gcsPath, 
-            cid, scarcity_limit: scarcity_limit || 0, is_stream: false
-        });
-        res.status(201).json(post);
-    } catch (err) { res.status(500).json({ error: "Post Sync Failed" }); }
-});
 
 app.post('/api/posts/stream', async (req, res) => {
 
@@ -905,6 +971,33 @@ app.get('/api/governance/proposals', async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: "FETCH_FAILED" });
     }
+});
+app.post('/api/governance/vote/:id', async (req, res) => {
+    const { vote, identity } = req.body;
+    const cleaned = cleanPhone(identity);
+    
+    const proposal = await Proposal.findById(req.params.id);
+    if (!proposal) return res.status(404).json({ error: "NOT_FOUND" });
+    if (proposal.status !== 'ACTIVE') return res.status(403).json({ error: "PROPOSAL_CLOSED" });
+    if (proposal.votes.voters.includes(cleaned)) return res.status(403).json({ error: "ALREADY_VOTED" });
+
+    const update = { 
+        $inc: { [`votes.${vote}`]: 1 },
+        $push: { "votes.voters": cleaned }
+    };
+
+    const updated = await Proposal.findByIdAndUpdate(req.params.id, update, { new: true });
+    
+    // Check for Pass/Reject status
+    if (updated.votes.yes >= updated.quorum) {
+        updated.status = 'PASSED';
+        await updated.save();
+    } else if (updated.votes.no >= updated.quorum) { // Logic for rejection
+        updated.status = 'REJECTED';
+        await updated.save();
+    }
+
+    res.json(updated);
 });
 
 
